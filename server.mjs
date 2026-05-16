@@ -25,6 +25,12 @@ const config = {
     process.env.KV_REST_API_READ_WRITE_TOKEN ||
     "",
   notifySecret: process.env.REKTAURANT_NOTIFY_SECRET || "",
+  notificationUrlHosts: new Set(
+    (process.env.REKTAURANT_NOTIFICATION_URL_HOSTS || "api.farcaster.xyz,client.warpcast.com,api.warpcast.com")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+  ),
   appName: "Rektaurant",
   tipRecipientName: process.env.REKTAURANT_TIP_ENS || "pappardelle.eth",
   tipRecipientAddress: process.env.REKTAURANT_TIP_ADDRESS || "0x5D69C42A3a481d0CCFd88CFA8a2a08e2BF456134",
@@ -564,10 +570,14 @@ function isValidNotificationDetails(details) {
   if (token.length < 8 || token.length > 1024) return false;
   try {
     const url = new URL(String(details.url));
-    return url.protocol === "https:" && url.toString().length < 2048;
+    return url.protocol === "https:" && url.toString().length < 2048 && isAllowedNotificationUrl(url);
   } catch {
     return false;
   }
+}
+
+function isAllowedNotificationUrl(url) {
+  return config.notificationUrlHosts.has(url.hostname.toLowerCase());
 }
 
 async function saveNotificationToken(record) {
