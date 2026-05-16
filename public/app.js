@@ -186,6 +186,7 @@ async function initFarcaster() {
     }
     state.farcasterContext = await sdk.context;
     bindFarcasterEvents();
+    await syncNotificationStateFromContext({ silent: true });
     await sdk.actions.ready();
     const username = state.farcasterContext?.user?.username;
     els.serviceStatus.textContent = username ? `Table for @${username}` : "Farcaster table ready";
@@ -677,15 +678,24 @@ function shareCopy() {
 }
 
 function bindFarcasterEvents() {
-  state.sdk?.on?.("miniappAdded", () => {
-    setNotificationUi("Notifications on");
-    els.serviceStatus.textContent = "Notifications ready";
-    els.tipStatus.textContent = "Notifications are on. The kitchen can call you back when hot dishes land.";
+  state.sdk?.on?.("miniappAdded", async () => {
+    setNotificationUi("Checking notifications");
+    await refreshFarcasterContext();
+    const synced = await syncNotificationStateFromContext();
+    if (!synced) {
+      setNotificationUi("Enable notifications");
+      els.serviceStatus.textContent = "App saved";
+      els.tipStatus.textContent = "Rektaurant is saved. If Farcaster did not enable notifications, turn them on from the app settings.";
+    }
   });
-  state.sdk?.on?.("notificationsEnabled", () => {
-    setNotificationUi("Notifications on");
-    els.serviceStatus.textContent = "Notifications ready";
-    els.tipStatus.textContent = "Notifications are on. The kitchen can call you back when hot dishes land.";
+  state.sdk?.on?.("notificationsEnabled", async () => {
+    setNotificationUi("Checking notifications");
+    await refreshFarcasterContext();
+    const synced = await syncNotificationStateFromContext();
+    if (!synced) {
+      setNotificationUi("Enable notifications");
+      els.tipStatus.textContent = "Farcaster says notifications changed, but no token is visible yet. Refresh Rektaurant and try again.";
+    }
   });
   state.sdk?.on?.("notificationsDisabled", () => {
     setNotificationUi("Turn on notifications");
@@ -710,9 +720,16 @@ async function turnOnNotifications() {
 
   try {
     await state.sdk.actions.addMiniApp();
-    setNotificationUi("Notifications on");
-    els.serviceStatus.textContent = "Notifications ready";
-    els.tipStatus.textContent = "Rektaurant is saved. Notifications are ready for hot long/short specials.";
+    setNotificationUi("Checking notifications");
+    els.serviceStatus.textContent = "Checking notification token";
+    await new Promise((resolve) => window.setTimeout(resolve, 800));
+    await refreshFarcasterContext();
+    const synced = await syncNotificationStateFromContext();
+    if (!synced) {
+      setNotificationUi("Enable notifications");
+      els.serviceStatus.textContent = "App saved";
+      els.tipStatus.textContent = "Rektaurant was saved, but no notification token arrived yet. If Farcaster shows a notification toggle, enable it there.";
+    }
   } catch (error) {
     setNotificationUi("Turn on notifications");
     const message = String(error?.message || error || "");
@@ -732,6 +749,61 @@ async function turnOnNotifications() {
 function setNotificationUi(label) {
   els.gateNotifyButton.textContent = label;
   els.saveButton.textContent = label;
+}
+
+async function refreshFarcasterContext() {
+  try {
+    state.farcasterContext = await state.sdk.context;
+  } catch {
+    // Keep the previous context if the host does not refresh it.
+  }
+  return state.farcasterContext;
+}
+
+async function syncNotificationStateFromContext({ silent = false } = {}) {
+  const client = state.farcasterContext?.client;
+  const details = client?.notificationDetails;
+
+  if (details?.token && details?.url) {
+    const stored = await syncNotificationDetails(details);
+    if (stored) {
+      setNotificationUi("Notifications on");
+      els.serviceStatus.textContent = "Notifications ready";
+      if (!silent) {
+        els.tipStatus.textContent = "Notifications are on. The kitchen can call you back when hot long/short dishes land.";
+      }
+      return true;
+    }
+  }
+
+  if (client?.added) {
+    setNotificationUi("Enable notifications");
+    if (!silent) {
+      els.serviceStatus.textContent = "App saved";
+    }
+    return false;
+  }
+
+  setNotificationUi("Turn on notifications");
+  return false;
+}
+
+async function syncNotificationDetails(notificationDetails) {
+  try {
+    const response = await fetch(`${apiBase}/api/notifications/sync`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        fid: state.farcasterContext?.user?.fid,
+        notificationDetails,
+      }),
+    });
+    if (!response.ok) return false;
+    const payload = await response.json();
+    return Boolean(payload.ok && payload.stored);
+  } catch {
+    return false;
+  }
 }
 
 function maybeHaptic(type) {

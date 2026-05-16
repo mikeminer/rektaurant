@@ -89,6 +89,15 @@ export async function rektaurantHandler(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/notifications/sync") {
+      if (request.method !== "POST") {
+        await jsonResponse(response, { ok: false, error: "Method not allowed" }, 405);
+        return;
+      }
+      await jsonResponse(response, await handleNotificationSync(await readJsonBody(request)));
+      return;
+    }
+
     if (url.pathname === "/api/notifications/preview") {
       await jsonResponse(response, {
         ok: true,
@@ -423,14 +432,8 @@ async function handleWebhook(payload) {
   }
 
   if ((event.event === "miniapp_added" || event.event === "notifications_enabled") && event.notificationDetails?.token && event.notificationDetails?.url) {
-    const record = {
-      id: notificationRecordId(event),
-      event: event.event,
-      fid: event.fid || null,
-      token: String(event.notificationDetails.token),
-      url: String(event.notificationDetails.url),
-      updatedAt: new Date().toISOString(),
-    };
+    const record = notificationRecordFromEvent(event);
+    if (!record) return { ok: false, event: event.event, error: "Invalid notification details" };
     await saveNotificationToken(record);
     return { ok: true, event: event.event, stored: true, storage: notificationStorageMode() };
   }
@@ -441,6 +444,25 @@ async function handleWebhook(payload) {
   }
 
   return { ok: true, event: event.event, ignored: true };
+}
+
+async function handleNotificationSync(payload) {
+  const event = {
+    event: "client_context_sync",
+    fid: payload?.fid || payload?.user?.fid || null,
+    notificationDetails: payload?.notificationDetails || payload?.client?.notificationDetails,
+  };
+  const record = notificationRecordFromEvent(event);
+  if (!record) {
+    return { ok: false, stored: false, error: "No valid notification details were provided." };
+  }
+  await saveNotificationToken(record);
+  return {
+    ok: true,
+    stored: true,
+    storage: notificationStorageMode(),
+    tokenCount: (await listNotificationTokens()).length,
+  };
 }
 
 async function handleNotificationSend(request, origin) {
@@ -522,6 +544,30 @@ function notificationRecordId(event) {
   const url = event.notificationDetails?.url || "default";
   const token = event.notificationDetails?.token || "";
   return `${fid}:${Buffer.from(`${url}:${token}`).toString("base64url").slice(0, 24)}`;
+}
+
+function notificationRecordFromEvent(event) {
+  if (!isValidNotificationDetails(event.notificationDetails)) return null;
+  return {
+    id: notificationRecordId(event),
+    event: event.event,
+    fid: event.fid || null,
+    token: String(event.notificationDetails.token),
+    url: String(event.notificationDetails.url),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function isValidNotificationDetails(details) {
+  if (!details?.token || !details?.url) return false;
+  const token = String(details.token);
+  if (token.length < 8 || token.length > 1024) return false;
+  try {
+    const url = new URL(String(details.url));
+    return url.protocol === "https:" && url.toString().length < 2048;
+  } catch {
+    return false;
+  }
 }
 
 async function saveNotificationToken(record) {
