@@ -17,6 +17,7 @@ const state = {
   walletProvider: null,
   walletAddress: "",
   walletKind: "",
+  notificationAction: "add",
 };
 
 const apiBase = window.location.protocol === "file:" ? "http://localhost:5173" : "";
@@ -684,9 +685,9 @@ function bindFarcasterEvents() {
     if (!synced) await refreshFarcasterContext();
     const contextSynced = synced || (await syncNotificationStateFromContext());
     if (!contextSynced) {
-      setNotificationUi("Enable notifications");
+      setNotificationUi("Notification settings", "settings");
       els.serviceStatus.textContent = "App saved";
-      els.tipStatus.textContent = "Rektaurant is saved. If Farcaster did not enable notifications, turn them on from the app settings.";
+      els.tipStatus.textContent = "Rektaurant is saved. Open Farcaster settings, enable Rektaurant notifications, then return and tap Check notifications.";
     }
   });
   state.sdk?.on?.("notificationsEnabled", async (event = {}) => {
@@ -695,12 +696,12 @@ function bindFarcasterEvents() {
     if (!synced) await refreshFarcasterContext();
     const contextSynced = synced || (await syncNotificationStateFromContext());
     if (!contextSynced) {
-      setNotificationUi("Enable notifications");
-      els.tipStatus.textContent = "Farcaster says notifications changed, but no token is visible yet. Refresh Rektaurant and try again.";
+      setNotificationUi("Notification settings", "settings");
+      els.tipStatus.textContent = "Farcaster says notifications changed, but no token is visible yet. Open settings and confirm Rektaurant notifications are enabled.";
     }
   });
   state.sdk?.on?.("notificationsDisabled", () => {
-    setNotificationUi("Turn on notifications");
+    setNotificationUi("Notification settings", "settings");
     els.serviceStatus.textContent = "Notifications off";
   });
   state.sdk?.on?.("miniappRemoved", () => {
@@ -710,6 +711,21 @@ function bindFarcasterEvents() {
 }
 
 async function turnOnNotifications() {
+  if (state.notificationAction === "settings") {
+    await openNotificationSettings();
+    return;
+  }
+
+  if (state.notificationAction === "check") {
+    await checkNotificationState();
+    return;
+  }
+
+  if (state.notificationAction === "ready") {
+    els.tipStatus.textContent = "Notifications are already on. Hot long/short plates can reach you.";
+    return;
+  }
+
   if (!state.sdk?.actions?.addMiniApp) {
     els.tipStatus.textContent = "Open Rektaurant inside Farcaster to turn on notifications.";
     els.serviceStatus.textContent = "Notifications work inside Farcaster";
@@ -721,6 +737,13 @@ async function turnOnNotifications() {
   els.saveButton.disabled = true;
 
   try {
+    await refreshFarcasterContext();
+    if (await syncNotificationStateFromContext({ silent: true })) return;
+    if (state.farcasterContext?.client?.added && !state.farcasterContext?.client?.notificationDetails) {
+      await openNotificationSettings();
+      return;
+    }
+
     const result = await state.sdk.actions.addMiniApp();
     setNotificationUi("Checking notifications");
     els.serviceStatus.textContent = "Checking notification token";
@@ -730,9 +753,9 @@ async function turnOnNotifications() {
     await refreshFarcasterContext();
     const synced = await syncNotificationStateFromContext();
     if (!synced) {
-      setNotificationUi("Enable notifications");
+      setNotificationUi("Notification settings", "settings");
       els.serviceStatus.textContent = "App saved";
-      els.tipStatus.textContent = "Rektaurant was saved, but no notification token arrived yet. If Farcaster shows a notification toggle, enable it there.";
+      els.tipStatus.textContent = "Rektaurant is saved, but no token arrived yet. Open Farcaster settings, enable Rektaurant notifications, then return here.";
     }
   } catch (error) {
     setNotificationUi("Turn on notifications");
@@ -750,9 +773,59 @@ async function turnOnNotifications() {
   }
 }
 
-function setNotificationUi(label) {
+async function openNotificationSettings() {
+  setNotificationUi("Opening settings", "settings");
+  els.serviceStatus.textContent = "Open Rektaurant settings";
+  els.tipStatus.textContent = "In Farcaster settings, open Notifications or Saved Mini Apps, select Rektaurant, enable notifications, then return and tap Check notifications.";
+  els.gateNotifyButton.disabled = true;
+  els.saveButton.disabled = true;
+
+  try {
+    const settingsUrl = "https://farcaster.xyz/~/settings";
+    if (state.sdk?.actions?.openUrl) {
+      await state.sdk.actions.openUrl(settingsUrl);
+    } else {
+      window.open(settingsUrl, "_blank", "noopener,noreferrer");
+    }
+  } catch {
+    els.tipStatus.textContent = "Could not open Farcaster settings from here. Open Farcaster settings manually, enable Rektaurant notifications, then return and tap Check notifications.";
+  } finally {
+    els.gateNotifyButton.disabled = false;
+    els.saveButton.disabled = false;
+    setNotificationUi("Check notifications", "check");
+  }
+}
+
+async function checkNotificationState() {
+  setNotificationUi("Checking notifications", "check");
+  els.gateNotifyButton.disabled = true;
+  els.saveButton.disabled = true;
+
+  try {
+    await refreshFarcasterContext();
+    const synced = await syncNotificationStateFromContext();
+    if (!synced) {
+      setNotificationUi("Notification settings", "settings");
+      els.serviceStatus.textContent = "Token still missing";
+      els.tipStatus.textContent = "No notification token is visible yet. In Farcaster settings, make sure Rektaurant notifications are enabled, then reopen the mini app.";
+    }
+  } finally {
+    els.gateNotifyButton.disabled = false;
+    els.saveButton.disabled = false;
+  }
+}
+
+function setNotificationUi(label, action = notificationActionForLabel(label)) {
+  state.notificationAction = action;
   els.gateNotifyButton.textContent = label;
   els.saveButton.textContent = label;
+}
+
+function notificationActionForLabel(label) {
+  if (label === "Notifications on") return "ready";
+  if (label === "Notification settings") return "settings";
+  if (label === "Check notifications") return "check";
+  return "add";
 }
 
 async function refreshFarcasterContext() {
@@ -769,7 +842,7 @@ async function syncNotificationStateFromContext({ silent = false } = {}) {
   if (await syncNotificationDetailsFromHost(client?.notificationDetails, { silent })) return true;
 
   if (client?.added) {
-    setNotificationUi("Enable notifications");
+    setNotificationUi("Notification settings", "settings");
     if (!silent) {
       els.serviceStatus.textContent = "App saved";
     }
@@ -784,7 +857,7 @@ async function syncNotificationDetailsFromHost(notificationDetails, { silent = f
   if (!notificationDetails?.token || !notificationDetails?.url) return false;
   const stored = await syncNotificationDetails(notificationDetails);
   if (!stored) {
-    setNotificationUi("Enable notifications");
+    setNotificationUi("Notification settings", "settings");
     if (!silent) {
       els.serviceStatus.textContent = "Notification save failed";
       els.tipStatus.textContent = "Farcaster sent a notification token, but Rektaurant could not save it. Try again in a minute.";
@@ -792,7 +865,7 @@ async function syncNotificationDetailsFromHost(notificationDetails, { silent = f
     return false;
   }
 
-  setNotificationUi("Notifications on");
+  setNotificationUi("Notifications on", "ready");
   els.serviceStatus.textContent = "Notifications ready";
   if (!silent) {
     els.tipStatus.textContent = "Notifications are on. The kitchen can call you back when hot long/short dishes land.";
