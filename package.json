@@ -1,0 +1,16 @@
+{
+  "name": "rektaurant",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Farcaster Mini App themed as a restaurant menu for read-only Hyperliquid signals.",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "check": "node --check server.mjs && node --check public/app.js && node --check \"api/[...path].js\"",
+    "make:assets": "powershell -ExecutionPolicy Bypass -File scripts/make-assets.ps1"
+  },
+  "dependencies": {
+    "viem": "^2.48.8"
+  }
+}

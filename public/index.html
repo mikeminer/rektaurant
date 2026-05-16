@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Rektaurant</title>
+    <meta name="description" content="A Farcaster Mini App that turns Hyperliquid long and short signals into a restaurant tasting menu." />
+    <meta property="og:title" content="Rektaurant" />
+    <meta property="og:description" content="Hyperliquid signal dishes, served as a read-only restaurant menu." />
+    <meta property="og:image" content="__APP_URL__/assets/hero-1200x630.png" />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#171214" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="assets/splash-200.png" />
+    <meta
+      name="fc:miniapp"
+      content='{"version":"1","imageUrl":"__APP_URL__/assets/og-image.png","button":{"title":"Open the menu","action":{"type":"launch_miniapp","name":"Rektaurant","url":"__APP_URL__/","splashImageUrl":"__APP_URL__/assets/splash-200.png","splashBackgroundColor":"#171214"}}}'
+    />
+    <meta
+      name="fc:frame"
+      content='{"version":"1","imageUrl":"__APP_URL__/assets/og-image.png","button":{"title":"Open the menu","action":{"type":"launch_frame","name":"Rektaurant","url":"__APP_URL__/","splashImageUrl":"__APP_URL__/assets/splash-200.png","splashBackgroundColor":"#171214"}}}'
+    />
+    <link rel="stylesheet" href="styles.css?v=tipgate1" />
+  </head>
+  <body class="is-locked">
+    <section class="closed-gate" id="closedGate" aria-labelledby="closed-title" hidden>
+      <div class="closed-card">
+        <img src="assets/splash-200.png" alt="" />
+        <p class="eyebrow">Kitchen lights off</p>
+        <h1 id="closed-title">Rektaurant is closed</h1>
+        <p>
+          The MCC kitchen is not answering right now, so tips are paused. It should reopen in the next few hours.
+        </p>
+        <div class="closed-actions">
+          <button class="primary-action" id="retryHealthButton" type="button">Check again</button>
+        </div>
+        <p class="tip-status" id="closedStatus">Checking the pass...</p>
+      </div>
+    </section>
+
+    <section class="tip-gate" id="tipGate" aria-labelledby="tip-title">
+      <div class="tip-card">
+        <div class="tip-plate">
+          <img src="assets/splash-200.png" alt="" />
+        </div>
+        <p class="eyebrow">Reservation required</p>
+        <h1 id="tip-title">Tip the pass to enter Rektaurant</h1>
+        <p class="tip-copy">
+          Leave a USDC tip to <strong>pappardelle.eth</strong>. After the transaction is completed, your table stays open for 10 minutes.
+        </p>
+        <div class="tip-amounts" role="group" aria-label="Tip amount">
+          <button type="button" data-tip-amount="500000">0.50 USDC</button>
+          <button type="button" data-tip-amount="1000000" class="active">1 USDC</button>
+          <button type="button" data-tip-amount="3000000">3 USDC</button>
+        </div>
+        <div class="tip-receipt">
+          <span>Recipient</span>
+          <strong id="tipRecipient">Resolving pappardelle.eth</strong>
+          <span>Network</span>
+          <strong>Base USDC</strong>
+          <span>Session</span>
+          <strong>10 minutes</strong>
+        </div>
+        <button class="primary-action tip-action" id="tipButton" type="button">Leave tip and enter</button>
+        <button class="quiet-action notify-action" id="gateNotifyButton" type="button">Turn on notifications</button>
+        <div class="wallet-dock" id="walletDock">
+          <button class="quiet-action" id="connectWalletButton" type="button">Connect wallet</button>
+          <span id="walletStatus">No wallet connected</span>
+        </div>
+        <button class="quiet-action preview-action" id="previewUnlockButton" type="button" hidden>Local preview session</button>
+        <p class="tip-status" id="tipStatus">The Farcaster wallet will ask you to confirm the send before access opens.</p>
+      </div>
+    </section>
+
+    <main class="shell app-shell" id="appShell" aria-hidden="true">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <img src="assets/splash-200.png" alt="" class="brand-mark" />
+          <div>
+            <p class="eyebrow">Hyperliquid signal kitchen</p>
+            <h1>Rektaurant</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div class="service-pill" id="serviceStatus">Warming the pass</div>
+          <div class="session-pill" id="sessionTimer" hidden>10:00</div>
+        </div>
+      </header>
+
+      <section class="service-board" aria-labelledby="service-title">
+        <div class="service-copy">
+          <p class="eyebrow">Tonight's tasting menu</p>
+          <h2 id="service-title">Long and short dishes from the MCC kitchen</h2>
+          <p class="service-note">
+            Read-only signal research. No orders, no signatures, no custody. Every plate still needs repricing, spread checks and risk control.
+          </p>
+          <p class="share-line">You didn't eat? Don't waste that delicious alpha. Share the hot plate with your friends.</p>
+          <div class="board-actions">
+            <button class="primary-action" id="refreshButton" type="button">Refresh menu</button>
+            <button class="quiet-action" id="shareButton" type="button" data-share-target="farcaster">Share on Farcaster</button>
+            <button class="quiet-action" id="twitterShareButton" type="button" data-share-target="twitter">Share on Twitter</button>
+            <button class="quiet-action" id="saveButton" type="button">Turn on notifications</button>
+          </div>
+        </div>
+        <img class="plate-art" src="assets/plate-signal-v2.png" alt="Stylized restaurant plate with a trading candle garnish" />
+      </section>
+
+      <section class="controls" aria-label="Menu controls">
+        <div class="control-block">
+          <span>Service mode</span>
+          <div class="segmented" role="group" aria-label="Operation mode">
+            <button type="button" data-mode="opportunistic" class="active">Opportunistic</button>
+            <button type="button" data-mode="balanced">Balanced</button>
+            <button type="button" data-mode="strict">Strict</button>
+          </div>
+        </div>
+        <div class="control-block">
+          <span>Side</span>
+          <div class="segmented" role="group" aria-label="Signal side">
+            <button type="button" data-side="" class="active">All</button>
+            <button type="button" data-side="long">Long</button>
+            <button type="button" data-side="short">Short</button>
+          </div>
+        </div>
+        <label class="slider-control">
+          <span>Minimum setup score <strong id="scoreValue">24</strong></span>
+          <input id="scoreSlider" type="range" min="0" max="70" value="24" step="2" />
+        </label>
+      </section>
+
+      <section class="summary-strip" aria-live="polite">
+        <div>
+          <span class="metric-label">Source</span>
+          <strong id="sourceMetric">MCC</strong>
+        </div>
+        <div>
+          <span class="metric-label">Long plates</span>
+          <strong id="longMetric">0</strong>
+        </div>
+        <div>
+          <span class="metric-label">Short plates</span>
+          <strong id="shortMetric">0</strong>
+        </div>
+        <div>
+          <span class="metric-label">Avg setup</span>
+          <strong id="avgMetric">0</strong>
+        </div>
+      </section>
+
+      <section class="menu-layout">
+        <div class="menu-list" id="menuList" aria-label="Signal dishes"></div>
+        <aside class="ticket" id="ticket" aria-label="Selected signal details">
+          <p class="eyebrow">Chef's ticket</p>
+          <h2>Select a plate</h2>
+          <p class="muted">Pick any dish to inspect entry, target, invalidation, confidence and warnings.</p>
+        </aside>
+      </section>
+
+      <footer class="footer-note">
+        <span id="updatedAt">Not served yet</span>
+        <span class="credits">
+          Made by
+          <a href="https://github.com/mikeminer" target="_blank" rel="noreferrer">pappardelle.eth</a>
+          with love.
+          <a href="https://github.com/mikeminer/multi-crypto-compare" target="_blank" rel="noreferrer">Project repository</a>
+        </span>
+      </footer>
+    </main>
+
+    <template id="dishTemplate">
+      <article class="dish-card">
+        <div class="dish-head">
+          <div>
+            <p class="course"></p>
+            <h3></h3>
+          </div>
+          <span class="side-badge"></span>
+        </div>
+        <p class="plating"></p>
+        <div class="dish-grid">
+          <span>Setup <strong data-metric="setup"></strong></span>
+          <span>Entry <strong data-metric="entry"></strong></span>
+          <span>EV <strong data-metric="ev"></strong></span>
+        </div>
+        <div class="confidence-track"><span></span></div>
+      </article>
+    </template>
+
+    <script type="module" src="app.js?v=tipgate1"></script>
+  </body>
+</html>

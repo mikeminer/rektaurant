@@ -1,0 +1,21 @@
+{
+  "name": "Rektaurant",
+  "short_name": "Rektaurant",
+  "description": "Restaurant themed Hyperliquid signal menu for Farcaster.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#171214",
+  "theme_color": "#171214",
+  "icons": [
+    {
+      "src": "/assets/splash-200.png",
+      "sizes": "200x200",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}

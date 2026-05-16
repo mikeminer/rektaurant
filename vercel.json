@@ -1,0 +1,21 @@
+{
+  "functions": {
+    "api/[...path].js": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/.well-known/farcaster.json",
+      "destination": "/api/manifest"
+    }
+  ]
+}
