@@ -177,7 +177,7 @@ function showClosedGate(reason) {
 
 async function initFarcaster() {
   try {
-    const { sdk } = await import("https://esm.sh/@farcaster/miniapp-sdk");
+    const { sdk } = await import("https://esm.sh/@farcaster/miniapp-sdk@0.3.0");
     state.sdk = sdk;
     state.isMiniApp = await sdk.isInMiniApp();
     if (!state.isMiniApp) {
@@ -678,21 +678,23 @@ function shareCopy() {
 }
 
 function bindFarcasterEvents() {
-  state.sdk?.on?.("miniappAdded", async () => {
+  state.sdk?.on?.("miniappAdded", async (event = {}) => {
     setNotificationUi("Checking notifications");
-    await refreshFarcasterContext();
-    const synced = await syncNotificationStateFromContext();
-    if (!synced) {
+    const synced = await syncNotificationDetailsFromHost(event.notificationDetails);
+    if (!synced) await refreshFarcasterContext();
+    const contextSynced = synced || (await syncNotificationStateFromContext());
+    if (!contextSynced) {
       setNotificationUi("Enable notifications");
       els.serviceStatus.textContent = "App saved";
       els.tipStatus.textContent = "Rektaurant is saved. If Farcaster did not enable notifications, turn them on from the app settings.";
     }
   });
-  state.sdk?.on?.("notificationsEnabled", async () => {
+  state.sdk?.on?.("notificationsEnabled", async (event = {}) => {
     setNotificationUi("Checking notifications");
-    await refreshFarcasterContext();
-    const synced = await syncNotificationStateFromContext();
-    if (!synced) {
+    const synced = await syncNotificationDetailsFromHost(event.notificationDetails);
+    if (!synced) await refreshFarcasterContext();
+    const contextSynced = synced || (await syncNotificationStateFromContext());
+    if (!contextSynced) {
       setNotificationUi("Enable notifications");
       els.tipStatus.textContent = "Farcaster says notifications changed, but no token is visible yet. Refresh Rektaurant and try again.";
     }
@@ -719,9 +721,11 @@ async function turnOnNotifications() {
   els.saveButton.disabled = true;
 
   try {
-    await state.sdk.actions.addMiniApp();
+    const result = await state.sdk.actions.addMiniApp();
     setNotificationUi("Checking notifications");
     els.serviceStatus.textContent = "Checking notification token";
+    const syncedFromAction = await syncNotificationDetailsFromHost(result?.notificationDetails);
+    if (syncedFromAction) return;
     await new Promise((resolve) => window.setTimeout(resolve, 800));
     await refreshFarcasterContext();
     const synced = await syncNotificationStateFromContext();
@@ -762,19 +766,7 @@ async function refreshFarcasterContext() {
 
 async function syncNotificationStateFromContext({ silent = false } = {}) {
   const client = state.farcasterContext?.client;
-  const details = client?.notificationDetails;
-
-  if (details?.token && details?.url) {
-    const stored = await syncNotificationDetails(details);
-    if (stored) {
-      setNotificationUi("Notifications on");
-      els.serviceStatus.textContent = "Notifications ready";
-      if (!silent) {
-        els.tipStatus.textContent = "Notifications are on. The kitchen can call you back when hot long/short dishes land.";
-      }
-      return true;
-    }
-  }
+  if (await syncNotificationDetailsFromHost(client?.notificationDetails, { silent })) return true;
 
   if (client?.added) {
     setNotificationUi("Enable notifications");
@@ -786,6 +778,26 @@ async function syncNotificationStateFromContext({ silent = false } = {}) {
 
   setNotificationUi("Turn on notifications");
   return false;
+}
+
+async function syncNotificationDetailsFromHost(notificationDetails, { silent = false } = {}) {
+  if (!notificationDetails?.token || !notificationDetails?.url) return false;
+  const stored = await syncNotificationDetails(notificationDetails);
+  if (!stored) {
+    setNotificationUi("Enable notifications");
+    if (!silent) {
+      els.serviceStatus.textContent = "Notification save failed";
+      els.tipStatus.textContent = "Farcaster sent a notification token, but Rektaurant could not save it. Try again in a minute.";
+    }
+    return false;
+  }
+
+  setNotificationUi("Notifications on");
+  els.serviceStatus.textContent = "Notifications ready";
+  if (!silent) {
+    els.tipStatus.textContent = "Notifications are on. The kitchen can call you back when hot long/short dishes land.";
+  }
+  return true;
 }
 
 async function syncNotificationDetails(notificationDetails) {

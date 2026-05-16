@@ -25,10 +25,10 @@ const config = {
     process.env.KV_REST_API_READ_WRITE_TOKEN ||
     "",
   notifySecret: process.env.REKTAURANT_NOTIFY_SECRET || "",
-  notificationUrlHosts: new Set(
-    (process.env.REKTAURANT_NOTIFICATION_URL_HOSTS || "api.farcaster.xyz,client.warpcast.com,api.warpcast.com")
+  notificationUrlDomains: new Set(
+    (process.env.REKTAURANT_NOTIFICATION_URL_DOMAINS || "farcaster.xyz,warpcast.com")
       .split(",")
-      .map((host) => host.trim().toLowerCase())
+      .map((domain) => domain.trim().toLowerCase())
       .filter(Boolean),
   ),
   appName: "Rektaurant",
@@ -577,7 +577,8 @@ function isValidNotificationDetails(details) {
 }
 
 function isAllowedNotificationUrl(url) {
-  return config.notificationUrlHosts.has(url.hostname.toLowerCase());
+  const host = url.hostname.toLowerCase();
+  return [...config.notificationUrlDomains].some((domain) => host === domain || host.endsWith(`.${domain}`));
 }
 
 async function saveNotificationToken(record) {
