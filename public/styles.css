@@ -202,6 +202,20 @@ body {
   background: rgba(91, 221, 158, 0.08);
 }
 
+.minipay-brand {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.minipay-brand img {
+  display: block;
+  width: min(142px, 58vw);
+  height: auto;
+  border-radius: 8px;
+  background: #000;
+}
+
 .minipay-pass > div {
   grid-template-columns: 1fr;
 }
