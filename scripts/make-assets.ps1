@@ -66,6 +66,67 @@ function Draw-LogoText($g, $w, $h, $large) {
   $g.DrawString("HYPERLIQUID SIGNAL MENU", $sans, (Brush "#d79a5b"), (New-Object System.Drawing.RectangleF 0, ($h * 0.72), $w, 50), $format)
 }
 
+function Fill-RoundedRect($g, $brush, [float]$x, [float]$y, [float]$w, [float]$h, [float]$r) {
+  $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+  $d = $r * 2
+  $path.AddArc($x, $y, $d, $d, 180, 90)
+  $path.AddArc($x + $w - $d, $y, $d, $d, 270, 90)
+  $path.AddArc($x + $w - $d, $y + $h - $d, $d, $d, 0, 90)
+  $path.AddArc($x, $y + $h - $d, $d, $d, 90, 90)
+  $path.CloseFigure()
+  $g.FillPath($brush, $path)
+  $path.Dispose()
+}
+
+function Draw-ScreenshotText($g, $text, [float]$x, [float]$y, [float]$w, [float]$h, $font, $brush, [string]$align = "Near") {
+  $format = New-Object System.Drawing.StringFormat
+  $format.Alignment = [System.Drawing.StringAlignment]::$align
+  $format.LineAlignment = [System.Drawing.StringAlignment]::Near
+  $format.Trimming = [System.Drawing.StringTrimming]::Word
+  $g.DrawString($text, $font, $brush, (New-Object System.Drawing.RectangleF $x, $y, $w, $h), $format)
+  $format.Dispose()
+}
+
+function Draw-ScreenshotCard($g, [float]$x, [float]$y, [float]$w, [float]$h, [string]$accent, [string]$title, [string]$body, [string]$badge) {
+  Fill-RoundedRect $g (Brush "#24191b") $x $y $w $h 24
+  $g.DrawRectangle((Pen $accent 5), $x, $y, $w, $h)
+  Draw-ScreenshotText $g $badge ($x + 36) ($y + 34) ($w - 72) 34 (Font "Arial" 28 ([System.Drawing.FontStyle]::Bold)) (Brush $accent)
+  Draw-ScreenshotText $g $title ($x + 36) ($y + 86) ($w - 72) 72 (Font "Georgia" 54 ([System.Drawing.FontStyle]::Bold)) (Brush "#f6ead8")
+  Draw-ScreenshotText $g $body ($x + 36) ($y + 176) ($w - 72) ($h - 214) (Font "Arial" 30) (Brush "#d8c7ad")
+}
+
+function Draw-ManifestScreenshot($path, [string]$variant) {
+  $w = 1284
+  $h = 2778
+  $canvas = New-Canvas $w $h
+  $bmp = $canvas[0]
+  $g = $canvas[1]
+  Draw-Background $g $w $h
+
+  $margin = 88
+  Draw-Plate $g ([int]($w / 2)) 410 230
+  Draw-ScreenshotText $g "Rektaurant" $margin 675 ($w - ($margin * 2)) 150 (Font "Georgia" 118 ([System.Drawing.FontStyle]::Bold)) (Brush "#f6ead8") "Center"
+  Draw-ScreenshotText $g "Base signal menu" $margin 830 ($w - ($margin * 2)) 56 (Font "Arial" 38 ([System.Drawing.FontStyle]::Bold)) (Brush "#d79a5b") "Center"
+
+  if ($variant -eq "gate") {
+    Draw-ScreenshotCard $g $margin 980 ($w - ($margin * 2)) 330 "#d79a5b" "Choose your plate" "Pay with Base ETH, MiniPay USDm, pappardelle token, or STX to unlock hot long and short signals." "RESERVATION"
+    Draw-ScreenshotCard $g $margin 1380 ($w - ($margin * 2)) 290 "#66c59b" "Stacks vault" "Connect a Stacks wallet and deposit 0.1 STX into the Rektaurant vault for a 10 minute table." "STX"
+    Draw-ScreenshotCard $g $margin 1738 ($w - ($margin * 2)) 290 "#8ea45d" "MiniPay table" "Pay 1 USDm on Celo from MiniPay for fast mobile access to the menu." "CELO"
+    Draw-ScreenshotCard $g $margin 2096 ($w - ($margin * 2)) 290 "#d84f3f" "Pappardelle pass" "Buy the monthly pass for 10000000 pappardelle token on Base." "MONTHLY"
+  }
+  else {
+    Draw-ScreenshotCard $g $margin 980 ($w - ($margin * 2)) 300 "#66c59b" "BTC Long plate" "Entry, target, invalidation, confidence and chef notes served as read only market research." "LONG"
+    Draw-ScreenshotCard $g $margin 1348 ($w - ($margin * 2)) 300 "#d84f3f" "ETH Short plate" "Risk notes and setup scores help crypto hunters scan hot Hyperliquid opportunities." "SHORT"
+    Draw-ScreenshotCard $g $margin 1716 ($w - ($margin * 2)) 300 "#d79a5b" "Chef ticket" "Inspect every dish before taking your own execution decision outside Rektaurant." "DETAILS"
+    Draw-ScreenshotCard $g $margin 2084 ($w - ($margin * 2)) 300 "#8ea45d" "Share the dish" "Farcaster and Twitter sharing bring friends back when fresh plates arrive." "SOCIAL"
+  }
+
+  Draw-ScreenshotText $g "Read only research. No orders. No custody." $margin 2520 ($w - ($margin * 2)) 70 (Font "Arial" 34 ([System.Drawing.FontStyle]::Bold)) (Brush "#f6ead8") "Center"
+  Save-Png $bmp $path
+  $g.Dispose()
+  $bmp.Dispose()
+}
+
 function Save-Png($bitmap, $path) {
   $tempPath = Join-Path (Split-Path -Parent $path) ("." + [System.Guid]::NewGuid().ToString("N") + ".png")
   $bitmap.Save($tempPath, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -111,3 +172,7 @@ foreach ($item in $items) {
 }
 
 Write-Host "Rektaurant assets written to $assetDir"
+
+Draw-ManifestScreenshot (Join-Path $assetDir "screenshot-gate-1284x2778.png") "gate"
+Draw-ManifestScreenshot (Join-Path $assetDir "screenshot-menu-1284x2778.png") "menu"
+Write-Host "Rektaurant manifest screenshots written to $assetDir"
