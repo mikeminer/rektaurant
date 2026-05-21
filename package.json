@@ -7,10 +7,19 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check server.mjs && node --check public/app.js && node --check \"api/[...path].js\"",
+    "check": "node --check server.mjs && node --check public/app.js && node --check \"api/[...path].js\" && node --check vitest.config.js",
+    "test:contracts": "vitest run -- --manifest ./Clarinet.toml",
+    "test:contracts:report": "vitest run -- --manifest ./Clarinet.toml --coverage --costs",
     "make:assets": "powershell -ExecutionPolicy Bypass -File scripts/make-assets.ps1"
   },
   "dependencies": {
     "viem": "^2.48.8"
+  },
+  "devDependencies": {
+    "@stacks/clarinet-sdk": "^3.9.1",
+    "@stacks/transactions": "^7.2.0",
+    "@types/node": "^24.4.0",
+    "vitest": "^3.2.4",
+    "vitest-environment-clarinet": "^3.0.0"
   }
 }

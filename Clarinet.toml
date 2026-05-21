@@ -8,7 +8,7 @@ requirements = []
 
 [contracts.rektaurant-vault]
 path = "contracts/rektaurant-vault.clar"
-clarity_version = 2
+clarity_version = 4
 epoch = "latest"
 
 [repl]

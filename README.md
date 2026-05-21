@@ -16,11 +16,18 @@ Project GitHub:
 https://github.com/mikeminer/rektaurant
 ```
 
-Il progetto Stacks e nella root del repository:
+Il progetto Stacks/Clarinet e nella root del repository con la struttura completa attesa da Hiro:
 
 ```text
 Clarinet.toml
 contracts/rektaurant-vault.clar
+settings/Devnet.toml
+settings/Testnet.toml
+settings/Mainnet.toml
+deployments/
+tests/rektaurant-vault.test.ts
+tsconfig.json
+vitest.config.js
 ```
 
 Contract name:
@@ -33,6 +40,15 @@ Se non lo vedi nella lista di Hiro, apri la configurazione GitHub dell'app Hiro 
 
 ```text
 REKTAURANT_STACKS_CONTRACT_ID=SP...YOURADDRESS.rektaurant-vault
+```
+
+I file `settings/Testnet.toml` e `settings/Mainnet.toml` contengono solo placeholder. Prima di deployare da Clarinet CLI o Hiro, configura il deployer wallet nella piattaforma o sostituisci il mnemonic localmente senza committarlo.
+
+Per testare il contratto in locale con Clarinet/Vitest:
+
+```powershell
+npm install
+npm run test:contracts
 ```
 
 ## MCC SaaS implementation model

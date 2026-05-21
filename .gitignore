@@ -1,4 +1,7 @@
 .vercel
 .clarinet/
+node_modules/
+coverage/
+.vitest/
 .rektaurant-notify-secret
 .rektaurant-early-alert-state.json

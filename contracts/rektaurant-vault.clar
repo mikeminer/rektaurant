@@ -4,6 +4,7 @@
 (define-constant contract-owner tx-sender)
 (define-constant err-owner-only (err u401))
 (define-constant err-invalid-amount (err u400))
+(define-constant err-vault-principal (err u500))
 
 (define-data-var next-deposit-id uint u0)
 
@@ -21,15 +22,16 @@
   (let
     (
       (deposit-id (var-get next-deposit-id))
+      (vault-principal (unwrap! (as-contract? () tx-sender) err-vault-principal))
     )
     (asserts! (> amount u0) err-invalid-amount)
-    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (try! (stx-transfer? amount tx-sender vault-principal))
     (map-set deposits deposit-id
       {
         sender: tx-sender,
         amount: amount,
         memo: memo,
-        at: block-height
+        at: stacks-block-height
       }
     )
     (var-set next-deposit-id (+ deposit-id u1))
@@ -50,7 +52,9 @@
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
     (asserts! (> amount u0) err-invalid-amount)
-    (as-contract (stx-transfer? amount tx-sender recipient))
+    (as-contract? ((with-stx amount))
+      (try! (stx-transfer? amount tx-sender recipient))
+    )
   )
 )
 
@@ -67,5 +71,8 @@
 )
 
 (define-read-only (get-vault-balance)
-  (stx-get-balance (as-contract tx-sender))
+  (match (as-contract? () tx-sender)
+    vault-principal (stx-get-balance vault-principal)
+    error u0
+  )
 )
