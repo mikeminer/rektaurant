@@ -266,8 +266,8 @@ async function buyMonthlyPass() {
   }
 
   els.monthlyPassButton.disabled = true;
-  els.monthlyPassButton.textContent = "Sending dishes";
-  els.tipStatus.textContent = "Send 10,000,000 pappardelle dishes on Base. Your monthly table opens after the transaction is accepted.";
+  els.monthlyPassButton.textContent = "Buying monthly pass";
+  els.tipStatus.textContent = "Buy the monthly pass for 10,000,000 pappardelle token on Base. Your table opens after the transaction is accepted.";
 
   try {
     const receipt = await sendAccessPayment({
@@ -283,7 +283,7 @@ async function buyMonthlyPass() {
     els.tipStatus.textContent = walletErrorMessage(error);
   } finally {
     els.monthlyPassButton.disabled = false;
-    els.monthlyPassButton.textContent = "Send dishes monthly pass";
+    els.monthlyPassButton.textContent = "Buy monthly pass";
   }
 }
 
@@ -565,7 +565,7 @@ function updateSessionTimer() {
   if (remaining <= 0) {
     localStorage.removeItem(tipSessionKey);
     lockApp();
-    els.tipStatus.textContent = "Your Rektaurant session expired. Tip ETH or send pappardelle dishes to re-enter.";
+    els.tipStatus.textContent = "Your Rektaurant session expired. Tip ETH or buy a pappardelle monthly pass to re-enter.";
     window.scrollTo({ top: 0, behavior: "smooth" });
     return;
   }

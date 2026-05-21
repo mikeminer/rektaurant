@@ -51,7 +51,7 @@ const config = {
       caip19: "eip155:8453/erc20:0x41859a1048fb4f8d668861b1249504bf52e6d3bd",
       decimals: 18,
     },
-    amountLabel: "10,000,000 pappardelle dishes",
+    amountLabel: "10,000,000 pappardelle token",
     amount: "10000000000000000000000000",
     sessionSeconds: 30 * 24 * 60 * 60,
     zoraUrl: "https://zora.co/@pappardelle/creator-coin",
