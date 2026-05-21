@@ -71,6 +71,14 @@ const config = {
     chainId: "0xa4ec",
     addCashUrl: "https://minipay.opera.com/add_cash",
   },
+  stacksVault: {
+    contractId: process.env.REKTAURANT_STACKS_CONTRACT_ID || "",
+    contractName: process.env.REKTAURANT_STACKS_CONTRACT_NAME || "rektaurant-vault",
+    network: process.env.REKTAURANT_STACKS_NETWORK || "mainnet",
+    amount: process.env.REKTAURANT_STACKS_VAULT_AMOUNT_USTX || "100000",
+    amountLabel: process.env.REKTAURANT_STACKS_VAULT_AMOUNT_LABEL || "0.1 STX",
+    sessionSeconds: 10 * 60,
+  },
 };
 
 const mimeTypes = new Map([
@@ -110,6 +118,11 @@ export async function rektaurantHandler(request, response) {
 
     if (url.pathname === "/api/tip-recipient") {
       await jsonResponse(response, tipRecipient());
+      return;
+    }
+
+    if (url.pathname === "/api/stacks-vault") {
+      await jsonResponse(response, stacksVaultConfig());
       return;
     }
 
@@ -531,6 +544,23 @@ function tipRecipient() {
     ],
     monthlyPass: config.monthlyPass,
     miniPayAccess: config.miniPayAccess,
+    stacksVault: stacksVaultConfig(),
+  };
+}
+
+function stacksVaultConfig() {
+  const network = config.stacksVault.network === "testnet" ? "testnet" : "mainnet";
+  const contractId = String(config.stacksVault.contractId || "").trim();
+  const enabled = isStacksContractId(contractId);
+  return {
+    enabled,
+    contractId: enabled ? contractId : "",
+    contractName: config.stacksVault.contractName,
+    network,
+    amount: config.stacksVault.amount,
+    amountLabel: config.stacksVault.amountLabel,
+    sessionSeconds: config.stacksVault.sessionSeconds,
+    explorerUrl: enabled ? stacksExplorerContractUrl(contractId, network) : "",
   };
 }
 
@@ -1046,6 +1076,16 @@ function stripTrailingSlash(value) {
 
 function isEvmAddress(value) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(value || ""));
+}
+
+function isStacksContractId(value) {
+  return /^S[PT][A-Z0-9]{38,41}\.[a-zA-Z]([a-zA-Z0-9]|[-_]){0,127}$/.test(String(value || ""));
+}
+
+function stacksExplorerContractUrl(contractId, network) {
+  const url = new URL(`/txid/${contractId}`, "https://explorer.hiro.so");
+  url.searchParams.set("chain", network === "testnet" ? "testnet" : "mainnet");
+  return url.toString();
 }
 
 function priceDecimals(price) {

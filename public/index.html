@@ -155,6 +155,23 @@
             <button class="quiet-action monthly-action" id="miniPayButton" type="button">Pay with MiniPay</button>
           </div>
         </div>
+        <div class="monthly-pass stacks-vault-pass">
+          <p>Stacks vault: deposit STX into the Rektaurant vault smart contract. Price: 0.1 STX. Session: 10 minutes.</p>
+          <div class="tip-receipt stacks-vault-receipt">
+            <span>Network</span>
+            <strong>Stacks</strong>
+            <span>Token</span>
+            <strong>STX</strong>
+            <span>Session</span>
+            <strong>10 minutes</strong>
+            <span>Price</span>
+            <strong id="stacksVaultPrice">0.1 STX</strong>
+          </div>
+          <div>
+            <a class="quiet-action stacks-vault-link" id="stacksVaultExplorerLink" href="https://explorer.hiro.so/" target="_blank" rel="noopener noreferrer" hidden>View vault contract</a>
+            <button class="quiet-action monthly-action" id="stacksVaultButton" type="button" disabled>Deploy Stacks vault first</button>
+          </div>
+        </div>
         <button class="quiet-action notify-action" id="gateNotifyButton" type="button">Turn on notifications</button>
         <div class="wallet-dock" id="walletDock">
           <button class="quiet-action" id="connectWalletButton" type="button">Connect wallet</button>

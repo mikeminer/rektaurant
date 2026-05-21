@@ -220,6 +220,15 @@ body {
   grid-template-columns: 1fr;
 }
 
+.stacks-vault-pass {
+  border-color: rgba(246, 109, 33, 0.34);
+  background: rgba(246, 109, 33, 0.08);
+}
+
+.stacks-vault-pass > div {
+  grid-template-columns: 1fr;
+}
+
 .api-setting {
   display: grid;
   gap: 8px;

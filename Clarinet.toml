@@ -1,0 +1,16 @@
+[project]
+name = "rektaurant"
+description = "Rektaurant Stacks vault for STX support deposits."
+authors = ["pappardelle.eth"]
+telemetry = false
+cache_dir = ".clarinet/cache"
+requirements = []
+
+[contracts.rektaurant-vault]
+path = "contracts/rektaurant-vault.clar"
+clarity_version = 2
+epoch = "latest"
+
+[repl]
+costs_version = 2
+parser_version = 2

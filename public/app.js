@@ -17,6 +17,7 @@ const state = {
   walletProvider: null,
   walletAddress: "",
   walletKind: "",
+  stacksVault: null,
   notificationAction: "add",
 };
 
@@ -51,6 +52,9 @@ const els = {
   tipStatus: document.querySelector("#tipStatus"),
   monthlyPassButton: document.querySelector("#monthlyPassButton"),
   miniPayButton: document.querySelector("#miniPayButton"),
+  stacksVaultButton: document.querySelector("#stacksVaultButton"),
+  stacksVaultExplorerLink: document.querySelector("#stacksVaultExplorerLink"),
+  stacksVaultPrice: document.querySelector("#stacksVaultPrice"),
   gateNotifyButton: document.querySelector("#gateNotifyButton"),
   connectWalletButton: document.querySelector("#connectWalletButton"),
   walletStatus: document.querySelector("#walletStatus"),
@@ -94,6 +98,7 @@ function bindControls() {
   els.tipButton.addEventListener("click", leaveTip);
   els.monthlyPassButton.addEventListener("click", buyMonthlyPass);
   els.miniPayButton.addEventListener("click", payWithMiniPay);
+  els.stacksVaultButton.addEventListener("click", supportStacksVault);
   els.previewUnlockButton.addEventListener("click", () => openSession({ transaction: "local-preview" }));
   document.querySelectorAll("[data-tip-amount]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -226,17 +231,36 @@ async function loadTipRecipient() {
     const payload = await response.json();
     if (!payload.ok || !payload.recipientAddress) throw new Error(payload.error || "Recipient unavailable");
     state.tipRecipient = payload;
+    state.stacksVault = payload.stacksVault || null;
     els.tipRecipient.textContent = `${payload.recipientName} (${shortAddress(payload.recipientAddress)})`;
     els.tipButton.disabled = false;
     els.monthlyPassButton.disabled = !payload.monthlyPass?.recipientAddress;
     els.miniPayButton.disabled = !payload.miniPayAccess?.recipientAddress;
+    updateStacksVaultUi();
   } catch (error) {
     els.tipRecipient.textContent = "Recipient unavailable";
     els.tipStatus.textContent = `Tip setup error: ${String(error.message || error)}`;
     els.tipButton.disabled = true;
     els.monthlyPassButton.disabled = true;
     els.miniPayButton.disabled = true;
+    els.stacksVaultButton.disabled = true;
   }
+}
+
+function updateStacksVaultUi() {
+  const vault = state.stacksVault;
+  els.stacksVaultPrice.textContent = vault?.amountLabel || "0.1 STX";
+  if (!vault?.enabled || !vault?.contractId) {
+    els.stacksVaultButton.disabled = true;
+    els.stacksVaultButton.textContent = "Deploy Stacks vault first";
+    els.stacksVaultExplorerLink.hidden = true;
+    return;
+  }
+
+  els.stacksVaultButton.disabled = false;
+  els.stacksVaultButton.textContent = "Support Stacks vault";
+  els.stacksVaultExplorerLink.href = vault.explorerUrl || "https://explorer.hiro.so/";
+  els.stacksVaultExplorerLink.hidden = false;
 }
 
 function updateGate() {
@@ -353,6 +377,55 @@ async function sendMiniPayAccess(provider, access) {
     feeCurrency: access.token.address,
     method: "minipay",
   });
+}
+
+async function supportStacksVault() {
+  const vault = state.stacksVault;
+  if (!vault?.enabled || !vault?.contractId) {
+    els.tipStatus.textContent = "Stacks vault is ready in the code. Deploy the contract and set REKTAURANT_STACKS_CONTRACT_ID on Vercel to enable it.";
+    return;
+  }
+
+  els.stacksVaultButton.disabled = true;
+  els.stacksVaultButton.textContent = "Opening Stacks wallet";
+  els.tipStatus.textContent = `Confirm the ${vault.amountLabel} vault deposit. Your 10 minute table opens after the transaction is accepted.`;
+
+  try {
+    const receipt = await sendStacksVaultDeposit(vault);
+    openSession(receipt);
+  } catch (error) {
+    els.tipStatus.textContent = walletErrorMessage(error);
+  } finally {
+    updateStacksVaultUi();
+  }
+}
+
+async function sendStacksVaultDeposit(vault) {
+  const [{ request }, { Cl }] = await Promise.all([
+    import("https://esm.sh/@stacks/connect"),
+    import("https://esm.sh/@stacks/transactions"),
+  ]);
+  const memo = "Rektaurant vault";
+  const result = await request("stx_callContract", {
+    contract: vault.contractId,
+    functionName: "deposit",
+    functionArgs: [Cl.uint(BigInt(String(vault.amount || "0"))), Cl.stringAscii(memo)],
+    network: vault.network || "mainnet",
+    postConditionMode: "allow",
+  });
+  const txid = result?.txid || result?.txId || result?.transaction;
+  if (!txid) throw new Error("Stacks vault transaction was not returned by the wallet.");
+
+  return {
+    transaction: txid,
+    amount: vault.amount,
+    recipientAddress: vault.contractId,
+    token: { symbol: "STX", chain: "Stacks" },
+    sessionSeconds: vault.sessionSeconds || 10 * 60,
+    accessLabel: "Stacks vault access",
+    kind: "stacks-vault-deposit",
+    method: "stacks-connect",
+  };
 }
 
 async function sendAccessPayment(payment) {
