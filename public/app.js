@@ -18,6 +18,8 @@ const state = {
   walletAddress: "",
   walletKind: "",
   stacksVault: null,
+  stacksWalletAddress: "",
+  stacksWalletKind: "",
   notificationAction: "add",
 };
 
@@ -53,8 +55,10 @@ const els = {
   monthlyPassButton: document.querySelector("#monthlyPassButton"),
   miniPayButton: document.querySelector("#miniPayButton"),
   stacksVaultButton: document.querySelector("#stacksVaultButton"),
+  connectStacksWalletButton: document.querySelector("#connectStacksWalletButton"),
   stacksVaultExplorerLink: document.querySelector("#stacksVaultExplorerLink"),
   stacksVaultPrice: document.querySelector("#stacksVaultPrice"),
+  stacksWalletStatus: document.querySelector("#stacksWalletStatus"),
   gateNotifyButton: document.querySelector("#gateNotifyButton"),
   connectWalletButton: document.querySelector("#connectWalletButton"),
   walletStatus: document.querySelector("#walletStatus"),
@@ -99,6 +103,7 @@ function bindControls() {
   els.monthlyPassButton.addEventListener("click", buyMonthlyPass);
   els.miniPayButton.addEventListener("click", payWithMiniPay);
   els.stacksVaultButton.addEventListener("click", supportStacksVault);
+  els.connectStacksWalletButton.addEventListener("click", () => connectStacksWallet({ forceWalletSelect: true }).catch(() => {}));
   els.previewUnlockButton.addEventListener("click", () => openSession({ transaction: "local-preview" }));
   document.querySelectorAll("[data-tip-amount]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -253,12 +258,20 @@ function updateStacksVaultUi() {
   if (!vault?.enabled || !vault?.contractId) {
     els.stacksVaultButton.disabled = true;
     els.stacksVaultButton.textContent = "Deploy Stacks vault first";
+    els.connectStacksWalletButton.disabled = true;
+    els.connectStacksWalletButton.textContent = "Connect Stacks wallet";
+    els.stacksWalletStatus.textContent = "Stacks vault unavailable";
     els.stacksVaultExplorerLink.hidden = true;
     return;
   }
 
-  els.stacksVaultButton.disabled = false;
-  els.stacksVaultButton.textContent = "Support Stacks vault";
+  els.connectStacksWalletButton.disabled = false;
+  els.connectStacksWalletButton.textContent = state.stacksWalletAddress ? "Stacks wallet connected" : "Connect Stacks wallet";
+  els.stacksWalletStatus.textContent = state.stacksWalletAddress
+    ? `${state.stacksWalletKind || "Stacks wallet"} ${shortAddress(state.stacksWalletAddress)}`
+    : "No Stacks wallet connected";
+  els.stacksVaultButton.disabled = !state.stacksWalletAddress;
+  els.stacksVaultButton.textContent = state.stacksWalletAddress ? "Pay STX vault" : "Connect Stacks first";
   els.stacksVaultExplorerLink.href = vault.explorerUrl || "https://explorer.hiro.so/";
   els.stacksVaultExplorerLink.hidden = false;
 }
@@ -386,16 +399,58 @@ async function supportStacksVault() {
     return;
   }
 
-  els.stacksVaultButton.disabled = true;
-  els.stacksVaultButton.textContent = "Opening Stacks wallet";
-  els.tipStatus.textContent = `Confirm the ${vault.amountLabel} vault deposit. Your 10 minute table opens after the transaction is accepted.`;
-
   try {
+    if (!state.stacksWalletAddress) {
+      els.tipStatus.textContent = "Choose and connect a Stacks wallet first, then pay the vault plate.";
+      await connectStacksWallet({ forceWalletSelect: true });
+    }
+
+    els.stacksVaultButton.disabled = true;
+    els.stacksVaultButton.textContent = "Opening Stacks wallet";
+    els.tipStatus.textContent = `Confirm the ${vault.amountLabel} vault deposit. Your 10 minute table opens after the transaction is accepted.`;
     const receipt = await sendStacksVaultDeposit(vault);
     openSession(receipt);
   } catch (error) {
-    els.tipStatus.textContent = walletErrorMessage(error);
+    els.tipStatus.textContent = stacksWalletErrorMessage(error);
   } finally {
+    updateStacksVaultUi();
+  }
+}
+
+async function connectStacksWallet({ forceWalletSelect = true } = {}) {
+  const vault = state.stacksVault;
+  if (!vault?.enabled || !vault?.contractId) {
+    els.tipStatus.textContent = "Stacks vault is not enabled yet.";
+    return null;
+  }
+
+  els.connectStacksWalletButton.disabled = true;
+  els.connectStacksWalletButton.textContent = "Connecting Stacks";
+  els.stacksWalletStatus.textContent = "Choose Leather, Xverse, or another Stacks wallet...";
+
+  try {
+    const { connect } = await import("https://esm.sh/@stacks/connect");
+    const result = await connect({
+      network: stacksNetwork(vault.network),
+      forceWalletSelect,
+      persistWalletSelect: true,
+    });
+    const addressEntry = stacksAddressFromConnectResult(result);
+    if (!addressEntry?.address) throw new Error("No STX address returned by the wallet.");
+
+    state.stacksWalletAddress = addressEntry.address;
+    state.stacksWalletKind = addressEntry.symbol || "Stacks";
+    updateStacksVaultUi();
+    els.tipStatus.textContent = "Stacks wallet connected. Pay the STX vault to open a 10 minute table.";
+    return addressEntry;
+  } catch (error) {
+    state.stacksWalletAddress = "";
+    state.stacksWalletKind = "";
+    updateStacksVaultUi();
+    els.tipStatus.textContent = stacksWalletErrorMessage(error);
+    throw error;
+  } finally {
+    els.connectStacksWalletButton.disabled = false;
     updateStacksVaultUi();
   }
 }
@@ -406,13 +461,20 @@ async function sendStacksVaultDeposit(vault) {
     import("https://esm.sh/@stacks/transactions"),
   ]);
   const memo = "Rektaurant vault";
-  const result = await request("stx_callContract", {
-    contract: vault.contractId,
-    functionName: "deposit",
-    functionArgs: [Cl.uint(BigInt(String(vault.amount || "0"))), Cl.stringAscii(memo)],
-    network: vault.network || "mainnet",
-    postConditionMode: "allow",
-  });
+  const result = await request(
+    {
+      persistWalletSelect: true,
+      enableLocalStorage: true,
+    },
+    "stx_callContract",
+    {
+      contract: vault.contractId,
+      functionName: "deposit",
+      functionArgs: [Cl.uint(BigInt(String(vault.amount || "0"))), Cl.stringAscii(memo)],
+      network: stacksNetwork(vault.network),
+      postConditionMode: "allow",
+    },
+  );
   const txid = result?.txid || result?.txId || result?.transaction;
   if (!txid) throw new Error("Stacks vault transaction was not returned by the wallet.");
 
@@ -420,6 +482,7 @@ async function sendStacksVaultDeposit(vault) {
     transaction: txid,
     amount: vault.amount,
     recipientAddress: vault.contractId,
+    senderAddress: state.stacksWalletAddress,
     token: { symbol: "STX", chain: "Stacks" },
     sessionSeconds: vault.sessionSeconds || 10 * 60,
     accessLabel: "Stacks vault access",
@@ -629,6 +692,34 @@ function walletErrorMessage(error) {
     return "Wallet not connected. Use Connect wallet, or open Rektaurant from the Farcaster mobile app if Farcaster web cannot attach your wallet.";
   }
   return `Payment cancelled or failed: ${message}`;
+}
+
+function stacksWalletErrorMessage(error) {
+  const message = String(error?.message || error || "unknown error");
+  if (message.toLowerCase().includes("usercanceled") || message.toLowerCase().includes("cancel")) {
+    return "Stacks wallet connection was cancelled.";
+  }
+  if (message.toLowerCase().includes("no wallet") || message.toLowerCase().includes("provider")) {
+    return "No Stacks wallet found. Install or open Leather/Xverse, then connect the Stacks wallet.";
+  }
+  return `Stacks wallet failed: ${message}`;
+}
+
+function stacksNetwork(value) {
+  return value === "testnet" ? "testnet" : "mainnet";
+}
+
+function stacksAddressFromConnectResult(result) {
+  const addresses = Array.isArray(result?.addresses) ? result.addresses : [];
+  return (
+    addresses.find((entry) => String(entry?.symbol || "").toUpperCase() === "STX") ||
+    addresses.find((entry) => isStacksAddress(entry?.address)) ||
+    null
+  );
+}
+
+function isStacksAddress(value) {
+  return /^S[PT][0-9A-Z]{20,}$/.test(String(value || ""));
 }
 
 function updateWalletUi() {

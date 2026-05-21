@@ -229,6 +229,25 @@ body {
   grid-template-columns: 1fr;
 }
 
+.stacks-vault-pass .stacks-wallet-dock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(246, 109, 33, 0.28);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.stacks-wallet-dock span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .api-setting {
   display: grid;
   gap: 8px;

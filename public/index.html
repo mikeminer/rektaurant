@@ -85,7 +85,7 @@
         ]
       }
     </script>
-    <link rel="stylesheet" href="styles.css?v=tipgate1" />
+    <link rel="stylesheet" href="styles.css?v=stackswallet1" />
   </head>
   <body class="is-locked">
     <section class="closed-gate" id="closedGate" aria-labelledby="closed-title" hidden>
@@ -111,7 +111,7 @@
         <p class="eyebrow">Reservation required</p>
         <h1 id="tip-title">Choose your option to pay</h1>
         <p class="tip-copy">
-          Access the all-you-can-eat long/short signals with Base ETH, pappardelle token, or MiniPay USDm.
+          Access the all-you-can-eat long/short signals with Base ETH, pappardelle token, MiniPay USDm, or STX.
         </p>
         <div class="tip-amounts" role="group" aria-label="ETH tip amount">
           <button type="button" data-tip-amount="200000000000000">0.0002 ETH</button>
@@ -167,9 +167,13 @@
             <span>Price</span>
             <strong id="stacksVaultPrice">0.1 STX</strong>
           </div>
+          <div class="stacks-wallet-dock">
+            <button class="quiet-action" id="connectStacksWalletButton" type="button">Connect Stacks wallet</button>
+            <span id="stacksWalletStatus">No Stacks wallet connected</span>
+          </div>
           <div>
             <a class="quiet-action stacks-vault-link" id="stacksVaultExplorerLink" href="https://explorer.hiro.so/" target="_blank" rel="noopener noreferrer" hidden>View vault contract</a>
-            <button class="quiet-action monthly-action" id="stacksVaultButton" type="button" disabled>Deploy Stacks vault first</button>
+            <button class="quiet-action monthly-action" id="stacksVaultButton" type="button" disabled>Connect Stacks first</button>
           </div>
         </div>
         <button class="quiet-action notify-action" id="gateNotifyButton" type="button">Turn on notifications</button>
@@ -296,6 +300,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=tipgate1"></script>
+    <script type="module" src="app.js?v=stackswallet1"></script>
   </body>
 </html>
