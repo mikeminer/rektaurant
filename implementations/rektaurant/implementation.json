@@ -1,0 +1,16 @@
+{
+  "name": "rektaurant",
+  "description": "Farcaster Mini App that plates Multi Crypto Compare Hyperliquid signals as a restaurant-style menu.",
+  "mccProjectDir": "C:\\Users\\mikfo\\Documents\\New project 2",
+  "mccStartBat": "start_mcc_site.bat",
+  "mccStartArgs": "--no-cloudflare --sdk-ide --no-sdk-ide-tunnel --no-pause",
+  "mccPort": 3000,
+  "mccHealthPath": "/api/health",
+  "vercelProjectDir": "C:\\Users\\mikfo\\Documents\\New project 4",
+  "vercelEnvName": "MCC_API_BASE",
+  "vercelEnvironment": "production",
+  "vercelTokenEnvVar": "VERCEL_TOKEN",
+  "autoDeploy": true,
+  "liveUrl": "https://rektaurant.vercel.app/",
+  "sourceUrl": "https://github.com/mikeminer/rektaurant"
+}

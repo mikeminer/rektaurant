@@ -2,6 +2,53 @@
 
 Mini app Farcaster a tema ristorante per servire segnali Hyperliquid come piatti: coin, lato long/short, entry, target, invalidation, punteggi e note di rischio.
 
+## MCC SaaS implementation model
+
+Questo progetto e anche il primo consumer implementation del sistema MCC SaaS:
+
+```text
+Multi Crypto Compare
+= tecnologia principale, API, segnali, portfolio/rebalance intelligence
+= gira localmente da C:\Users\mikfo\Documents\New project 2
+
+MCC SDK IDE
+= ambiente di sviluppo per script, bot e integrazioni API
+
+Rektaurant
+= consumer/Farcaster Mini App
+= legge MCC_API_BASE da Vercel
+= riceve automaticamente il tunnel MCC aggiornato
+```
+
+Per scalare, ogni nuova app che usa le API MCC deve avere una cartella dedicata in:
+
+```text
+implementations/
+```
+
+La prima e:
+
+```text
+implementations/rektaurant/
+  implementation.json
+  README.md
+  env.example
+```
+
+Per avviare il relay automatico MCC -> Cloudflare Tunnel -> Vercel env -> deploy:
+
+```powershell
+.\scripts\mcc-implementation-relay.ps1 -Implementation rektaurant
+```
+
+Oppure da CMD/doppio click:
+
+```cmd
+manage_mcc_implementation.bat
+```
+
+Quando creerai una nuova implementation, crea una nuova cartella sotto `implementations/`, copia `implementation.json`, cambia `vercelProjectDir`, `vercelEnvName`, nome progetto e policy `autoDeploy`. Non mettere token, private key o segreti dentro queste cartelle.
+
 ## Avvio locale
 
 ```powershell

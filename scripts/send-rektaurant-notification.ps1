@@ -4,7 +4,10 @@ param(
   [string]$Type,
 
   [string]$Secret,
-  [string]$BaseUrl = "https://rektaurant.vercel.app"
+  [string]$BaseUrl = "https://rektaurant.vercel.app",
+
+  [string]$Title,
+  [string]$Body
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +29,9 @@ if (-not $Type) {
   Write-Host ""
   Write-Host "5) Preview random variants"
   Write-Host ""
+  Write-Host "6) Custom message"
+  Write-Host "   Write your own notification title and message before sending."
+  Write-Host ""
   $choice = Read-Host "Select option"
   switch ($choice.Trim()) {
     "1" { $Type = "open" }
@@ -33,6 +39,13 @@ if (-not $Type) {
     "3" { $Type = "closing" }
     "4" { $Type = "happy-hour" }
     "5" { $Type = "preview" }
+    "6" {
+      $Type = "open"
+      $Title = Read-Host "Custom title, max 32 chars"
+      $Body = Read-Host "Custom message, max 128 chars"
+      if (-not $Title.Trim()) { throw "Custom title is required." }
+      if (-not $Body.Trim()) { throw "Custom message is required." }
+    }
     default { throw "Invalid option: $choice" }
   }
 }
@@ -53,7 +66,18 @@ if (-not $Secret) {
   $Secret = Read-Host "REKTAURANT_NOTIFY_SECRET"
 }
 
-$payload = @{ type = $Type } | ConvertTo-Json -Compress
+$payloadObject = @{ type = $Type }
+if ($Title) { $payloadObject.title = $Title.Trim() }
+if ($Body) { $payloadObject.body = $Body.Trim() }
+
+if ($Title -and $Title.Length -gt 32) {
+  Write-Host "NOTE: title is longer than 32 chars and will be truncated by Rektaurant."
+}
+if ($Body -and $Body.Length -gt 128) {
+  Write-Host "NOTE: message is longer than 128 chars and will be truncated by Rektaurant."
+}
+
+$payload = $payloadObject | ConvertTo-Json -Compress
 $headers = @{
   "Authorization" = "Bearer $Secret"
   "Content-Type" = "application/json"
