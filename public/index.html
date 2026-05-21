@@ -135,13 +135,30 @@
             <button class="quiet-action monthly-action" id="monthlyPassButton" type="button">Buy monthly pass</button>
           </div>
         </div>
+        <div class="monthly-pass minipay-pass">
+          <p>MiniPay table: pay with MiniPay on Celo. Price: 1 USDm. Session: 10 minutes.</p>
+          <div class="tip-receipt minipay-receipt">
+            <span>Network</span>
+            <strong>Celo</strong>
+            <span>Token</span>
+            <strong>USDm</strong>
+            <span>Session</span>
+            <strong>10 minutes</strong>
+            <span>Price</span>
+            <strong>1 USDm</strong>
+          </div>
+          <div>
+            <a class="quiet-action minipay-cash-action" href="https://minipay.opera.com/add_cash" target="_blank" rel="noopener noreferrer">Add cash to MiniPay</a>
+            <button class="quiet-action monthly-action" id="miniPayButton" type="button">Pay with MiniPay</button>
+          </div>
+        </div>
         <button class="quiet-action notify-action" id="gateNotifyButton" type="button">Turn on notifications</button>
         <div class="wallet-dock" id="walletDock">
           <button class="quiet-action" id="connectWalletButton" type="button">Connect wallet</button>
           <span id="walletStatus">No wallet connected</span>
         </div>
         <button class="quiet-action preview-action" id="previewUnlockButton" type="button" hidden>Local preview session</button>
-        <p class="tip-status" id="tipStatus">The Farcaster wallet will ask you to confirm the send before access opens.</p>
+        <p class="tip-status" id="tipStatus">Your wallet will ask you to confirm the payment before access opens.</p>
       </div>
     </section>
 

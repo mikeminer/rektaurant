@@ -30,6 +30,14 @@ const baseChainParams = {
   rpcUrls: ["https://mainnet.base.org"],
   blockExplorerUrls: ["https://basescan.org"],
 };
+const celoChainId = "0xa4ec";
+const celoChainParams = {
+  chainId: celoChainId,
+  chainName: "Celo Mainnet",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+  rpcUrls: ["https://forno.celo.org"],
+  blockExplorerUrls: ["https://celoscan.io"],
+};
 
 const els = {
   appShell: document.querySelector("#appShell"),
@@ -42,6 +50,7 @@ const els = {
   tipRecipient: document.querySelector("#tipRecipient"),
   tipStatus: document.querySelector("#tipStatus"),
   monthlyPassButton: document.querySelector("#monthlyPassButton"),
+  miniPayButton: document.querySelector("#miniPayButton"),
   gateNotifyButton: document.querySelector("#gateNotifyButton"),
   connectWalletButton: document.querySelector("#connectWalletButton"),
   walletStatus: document.querySelector("#walletStatus"),
@@ -67,6 +76,7 @@ boot();
 async function boot() {
   await loadAppConfig();
   bindControls();
+  initMiniPayUi();
   await initFarcaster();
   if (!state.isMiniApp && (window.location.hostname === "localhost" || window.location.protocol === "file:")) {
     els.previewUnlockButton.hidden = false;
@@ -83,6 +93,7 @@ function bindControls() {
 
   els.tipButton.addEventListener("click", leaveTip);
   els.monthlyPassButton.addEventListener("click", buyMonthlyPass);
+  els.miniPayButton.addEventListener("click", payWithMiniPay);
   els.previewUnlockButton.addEventListener("click", () => openSession({ transaction: "local-preview" }));
   document.querySelectorAll("[data-tip-amount]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -122,6 +133,13 @@ function bindControls() {
   });
 
   els.scoreSlider.addEventListener("change", () => loadMenu({ force: true }));
+}
+
+function initMiniPayUi() {
+  if (!isMiniPayProvider(window.ethereum)) return;
+  document.body.classList.add("is-minipay");
+  els.connectWalletButton.hidden = true;
+  els.walletStatus.textContent = "MiniPay wallet detected";
 }
 
 async function loadAppConfig() {
@@ -211,11 +229,13 @@ async function loadTipRecipient() {
     els.tipRecipient.textContent = `${payload.recipientName} (${shortAddress(payload.recipientAddress)})`;
     els.tipButton.disabled = false;
     els.monthlyPassButton.disabled = !payload.monthlyPass?.recipientAddress;
+    els.miniPayButton.disabled = !payload.miniPayAccess?.recipientAddress;
   } catch (error) {
     els.tipRecipient.textContent = "Recipient unavailable";
     els.tipStatus.textContent = `Tip setup error: ${String(error.message || error)}`;
     els.tipButton.disabled = true;
     els.monthlyPassButton.disabled = true;
+    els.miniPayButton.disabled = true;
   }
 }
 
@@ -248,6 +268,8 @@ async function leaveTip() {
       recipientAddress: state.tipRecipient.recipientAddress,
       sessionSeconds: state.tipRecipient.sessionSeconds || 10 * 60,
       accessLabel: "10 minutes",
+      chainId: baseChainId,
+      chainParams: baseChainParams,
     });
     openSession(receipt);
   } catch (error) {
@@ -277,6 +299,8 @@ async function buyMonthlyPass() {
       recipientAddress: pass.recipientAddress,
       sessionSeconds: pass.sessionSeconds || 30 * 24 * 60 * 60,
       accessLabel: "1 month",
+      chainId: baseChainId,
+      chainParams: baseChainParams,
     });
     openSession(receipt);
   } catch (error) {
@@ -285,6 +309,50 @@ async function buyMonthlyPass() {
     els.monthlyPassButton.disabled = false;
     els.monthlyPassButton.textContent = "Buy monthly pass";
   }
+}
+
+async function payWithMiniPay() {
+  const access = state.tipRecipient?.miniPayAccess;
+  if (!access?.recipientAddress || !access?.token) {
+    els.tipStatus.textContent = "MiniPay access is not ready yet.";
+    return;
+  }
+
+  if (!isMiniPayProvider(window.ethereum)) {
+    els.tipStatus.textContent = "Open Rektaurant inside MiniPay to pay 1 USDm on Celo for a 10 minute table.";
+    return;
+  }
+
+  els.miniPayButton.disabled = true;
+  els.miniPayButton.textContent = "Opening MiniPay";
+  els.tipStatus.textContent = "Confirm 1 USDm in MiniPay on Celo. Your 10 minute table opens after the transaction is accepted.";
+
+  try {
+    const receipt = await sendMiniPayAccess(window.ethereum, access);
+    openSession(receipt);
+  } catch (error) {
+    els.tipStatus.textContent = walletErrorMessage(error);
+  } finally {
+    els.miniPayButton.disabled = false;
+    els.miniPayButton.textContent = "Pay with MiniPay";
+  }
+}
+
+async function sendMiniPayAccess(provider, access) {
+  state.walletProvider = provider;
+  state.walletKind = "MiniPay";
+  return sendPaymentWithEthereumProvider(provider, {
+    kind: "minipay-usdm-access",
+    token: access.token,
+    amount: access.amount,
+    recipientAddress: access.recipientAddress,
+    sessionSeconds: access.sessionSeconds || 10 * 60,
+    accessLabel: "MiniPay access",
+    chainId: access.chainId || celoChainId,
+    chainParams: celoChainParams,
+    feeCurrency: access.token.address,
+    method: "minipay",
+  });
 }
 
 async function sendAccessPayment(payment) {
@@ -340,12 +408,12 @@ async function connectWallet() {
         const accounts = await candidate.provider.request({ method: "eth_requestAccounts" });
         const address = Array.isArray(accounts) ? accounts[0] : "";
         if (!isEvmAddress(address)) throw new Error("Wallet not connected");
-        await ensureBaseChain(candidate.provider);
+        await ensurePaymentChain(candidate.provider, { chainId: baseChainId, chainParams: baseChainParams });
         state.walletProvider = candidate.provider;
         state.walletAddress = address;
         state.walletKind = candidate.kind;
         updateWalletUi();
-        els.tipStatus.textContent = "Wallet connected. Choose the ETH tip or the monthly dishes pass.";
+        els.tipStatus.textContent = "Wallet connected. Choose the ETH tip, MiniPay, or the monthly pass.";
         return candidate.provider;
       } catch (error) {
         lastError = error;
@@ -388,7 +456,7 @@ async function walletProviderCandidates() {
 function browserWalletProviders() {
   const injected = window.ethereum?.providers || (window.ethereum ? [window.ethereum] : []);
   const providers = injected.map((provider) => ({
-    kind: provider.isCoinbaseWallet ? "Coinbase" : provider.isMetaMask ? "MetaMask" : "Browser wallet",
+    kind: provider.isMiniPay ? "MiniPay" : provider.isCoinbaseWallet ? "Coinbase" : provider.isMetaMask ? "MetaMask" : "Browser wallet",
     provider,
   }));
 
@@ -410,7 +478,7 @@ async function sendPaymentWithEthereumProvider(provider, payment) {
   const from = state.walletAddress || (await connectedWalletAddress(provider));
   if (!isEvmAddress(from)) throw new Error("Wallet not connected");
 
-  await ensureBaseChain(provider);
+  await ensurePaymentChain(provider, payment);
   const transactionParams = isNativeToken(payment.token)
     ? {
         from,
@@ -423,6 +491,8 @@ async function sendPaymentWithEthereumProvider(provider, payment) {
         value: "0x0",
         data: encodeErc20Transfer(payment.recipientAddress, payment.amount),
       };
+
+  if (payment.feeCurrency) transactionParams.feeCurrency = payment.feeCurrency;
 
   if (!isEvmAddress(transactionParams.to)) throw new Error("Payment token unavailable");
 
@@ -439,7 +509,7 @@ async function sendPaymentWithEthereumProvider(provider, payment) {
     sessionSeconds: payment.sessionSeconds,
     accessLabel: payment.accessLabel,
     kind: payment.kind,
-    method: "eip1193",
+    method: payment.method || "eip1193",
   };
 }
 
@@ -454,15 +524,17 @@ async function connectedWalletAddress(provider) {
   return address;
 }
 
-async function ensureBaseChain(provider) {
+async function ensurePaymentChain(provider, payment = {}) {
+  const chainId = payment.chainId || baseChainId;
+  const chainParams = payment.chainParams || baseChainParams;
   const currentChainId = await provider.request({ method: "eth_chainId" });
-  if (String(currentChainId).toLowerCase() === baseChainId) return;
+  if (String(currentChainId).toLowerCase() === chainId) return;
 
   try {
-    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: baseChainId }] });
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
   } catch (error) {
     if (Number(error?.code) !== 4902) throw error;
-    await provider.request({ method: "wallet_addEthereumChain", params: [baseChainParams] });
+    await provider.request({ method: "wallet_addEthereumChain", params: [chainParams] });
   }
 }
 
@@ -1008,6 +1080,10 @@ function tokenAddressFromCaip19(value) {
 
 function isNativeToken(token) {
   return Boolean(token?.native) || /\/(?:native|slip44:60)$/i.test(String(token?.caip19 || ""));
+}
+
+function isMiniPayProvider(provider) {
+  return Boolean(provider?.isMiniPay);
 }
 
 function bigintToHex(value) {

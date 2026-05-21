@@ -56,6 +56,21 @@ const config = {
     sessionSeconds: 30 * 24 * 60 * 60,
     zoraUrl: "https://zora.co/@pappardelle/creator-coin",
   },
+  miniPayAccess: {
+    recipientAddress: process.env.REKTAURANT_MINIPAY_ADDRESS || process.env.REKTAURANT_TIP_ADDRESS || "0x5D69C42A3a481d0CCFd88CFA8a2a08e2BF456134",
+    token: {
+      symbol: "USDm",
+      chain: "Celo",
+      address: "0x765DE816845861e75A25fCA122bb6898B8B1282a",
+      caip19: "eip155:42220/erc20:0x765DE816845861e75A25fCA122bb6898B8B1282a",
+      decimals: 18,
+    },
+    amountLabel: "1 USDm",
+    amount: "1000000000000000000",
+    sessionSeconds: 10 * 60,
+    chainId: "0xa4ec",
+    addCashUrl: "https://minipay.opera.com/add_cash",
+  },
 };
 
 const mimeTypes = new Map([
@@ -494,7 +509,7 @@ function llmsTxt(origin) {
 }
 
 function tipRecipient() {
-  if (!isEvmAddress(config.tipRecipientAddress) || !isEvmAddress(config.monthlyPass.recipientAddress)) {
+  if (!isEvmAddress(config.tipRecipientAddress) || !isEvmAddress(config.monthlyPass.recipientAddress) || !isEvmAddress(config.miniPayAccess.recipientAddress)) {
     return {
       ok: false,
       error: "Invalid payment recipient address",
@@ -515,6 +530,7 @@ function tipRecipient() {
       { label: "0.001 ETH", amount: "1000000000000000" },
     ],
     monthlyPass: config.monthlyPass,
+    miniPayAccess: config.miniPayAccess,
   };
 }
 

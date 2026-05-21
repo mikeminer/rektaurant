@@ -193,6 +193,19 @@ body {
   grid-column: 1 / -1;
 }
 
+.monthly-pass .tip-receipt {
+  margin: 0;
+}
+
+.minipay-pass {
+  border-color: rgba(91, 221, 158, 0.34);
+  background: rgba(91, 221, 158, 0.08);
+}
+
+.minipay-pass > div {
+  grid-template-columns: 1fr;
+}
+
 .api-setting {
   display: grid;
   gap: 8px;
