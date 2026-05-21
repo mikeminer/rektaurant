@@ -157,6 +157,38 @@ body {
   overflow-wrap: anywhere;
 }
 
+.monthly-pass {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+  border: 1px solid rgba(244, 194, 111, 0.34);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(244, 194, 111, 0.09);
+}
+
+.monthly-pass p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.monthly-pass > div {
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  gap: 8px;
+}
+
+.monthly-pass .quiet-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  text-align: center;
+  text-decoration: none;
+}
+
 .api-setting {
   display: grid;
   gap: 8px;
@@ -825,6 +857,7 @@ h3 {
 
   .tip-amounts,
   .tip-receipt,
+  .monthly-pass > div,
   .menu-api-setting > div {
     grid-template-columns: 1fr;
   }

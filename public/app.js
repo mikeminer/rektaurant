@@ -8,7 +8,7 @@ const state = {
   farcasterContext: null,
   isMiniApp: false,
   tipRecipient: null,
-  tipAmount: "1000000",
+  tipAmount: "500000000000000",
   sessionExpiresAt: 0,
   sessionTimer: null,
   mccApiBase: "",
@@ -41,6 +41,7 @@ const els = {
   previewUnlockButton: document.querySelector("#previewUnlockButton"),
   tipRecipient: document.querySelector("#tipRecipient"),
   tipStatus: document.querySelector("#tipStatus"),
+  monthlyPassButton: document.querySelector("#monthlyPassButton"),
   gateNotifyButton: document.querySelector("#gateNotifyButton"),
   connectWalletButton: document.querySelector("#connectWalletButton"),
   walletStatus: document.querySelector("#walletStatus"),
@@ -81,6 +82,7 @@ function bindControls() {
   els.retryHealthButton.addEventListener("click", () => checkMccAndUpdateGate({ force: true }));
 
   els.tipButton.addEventListener("click", leaveTip);
+  els.monthlyPassButton.addEventListener("click", buyMonthlyPass);
   els.previewUnlockButton.addEventListener("click", () => openSession({ transaction: "local-preview" }));
   document.querySelectorAll("[data-tip-amount]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -208,10 +210,12 @@ async function loadTipRecipient() {
     state.tipRecipient = payload;
     els.tipRecipient.textContent = `${payload.recipientName} (${shortAddress(payload.recipientAddress)})`;
     els.tipButton.disabled = false;
+    els.monthlyPassButton.disabled = !payload.monthlyPass?.recipientAddress;
   } catch (error) {
     els.tipRecipient.textContent = "Recipient unavailable";
     els.tipStatus.textContent = `Tip setup error: ${String(error.message || error)}`;
     els.tipButton.disabled = true;
+    els.monthlyPassButton.disabled = true;
   }
 }
 
@@ -233,21 +237,57 @@ async function leaveTip() {
   }
 
   els.tipButton.disabled = true;
-  els.tipButton.textContent = "Sending tip";
-  els.tipStatus.textContent = "Connect or confirm with your wallet. Access opens after the transaction is accepted.";
+  els.tipButton.textContent = "Sending ETH";
+  els.tipStatus.textContent = "Connect or confirm with your wallet. Your 10 minute table opens after the ETH transaction is accepted.";
 
   try {
-    const receipt = await sendTip();
+    const receipt = await sendAccessPayment({
+      kind: "eth-tip",
+      token: state.tipRecipient.token,
+      amount: state.tipAmount,
+      recipientAddress: state.tipRecipient.recipientAddress,
+      sessionSeconds: state.tipRecipient.sessionSeconds || 10 * 60,
+      accessLabel: "10 minutes",
+    });
     openSession(receipt);
   } catch (error) {
     els.tipStatus.textContent = walletErrorMessage(error);
   } finally {
     els.tipButton.disabled = false;
-    els.tipButton.textContent = "Leave tip and enter";
+    els.tipButton.textContent = "Tip ETH and enter";
   }
 }
 
-async function sendTip() {
+async function buyMonthlyPass() {
+  const pass = state.tipRecipient?.monthlyPass;
+  if (!pass?.recipientAddress || !pass?.token) {
+    els.tipStatus.textContent = "Monthly pass is not ready yet.";
+    return;
+  }
+
+  els.monthlyPassButton.disabled = true;
+  els.monthlyPassButton.textContent = "Sending dishes";
+  els.tipStatus.textContent = "Send 10,000,000 pappardelle dishes on Base. Your monthly table opens after the transaction is accepted.";
+
+  try {
+    const receipt = await sendAccessPayment({
+      kind: "monthly-pappardelle-pass",
+      token: pass.token,
+      amount: pass.amount,
+      recipientAddress: pass.recipientAddress,
+      sessionSeconds: pass.sessionSeconds || 30 * 24 * 60 * 60,
+      accessLabel: "1 month",
+    });
+    openSession(receipt);
+  } catch (error) {
+    els.tipStatus.textContent = walletErrorMessage(error);
+  } finally {
+    els.monthlyPassButton.disabled = false;
+    els.monthlyPassButton.textContent = "Send dishes monthly pass";
+  }
+}
+
+async function sendAccessPayment(payment) {
   if (!state.walletProvider) {
     try {
       await connectWallet();
@@ -257,7 +297,7 @@ async function sendTip() {
   }
 
   if (state.walletProvider) {
-    return sendTipWithEthereumProvider(state.walletProvider);
+    return sendPaymentWithEthereumProvider(state.walletProvider, payment);
   }
 
   if (!state.sdk?.actions?.sendToken) {
@@ -265,21 +305,25 @@ async function sendTip() {
   }
 
   const result = await state.sdk.actions.sendToken({
-    token: state.tipRecipient.token.caip19,
-    amount: state.tipAmount,
-    recipientAddress: state.tipRecipient.recipientAddress,
+    token: payment.token.caip19,
+    amount: payment.amount,
+    recipientAddress: payment.recipientAddress,
   });
 
   if (result?.success) {
     return {
       transaction: result.send?.transaction,
-      amount: state.tipAmount,
-      recipientAddress: state.tipRecipient.recipientAddress,
+      amount: payment.amount,
+      recipientAddress: payment.recipientAddress,
+      token: payment.token,
+      sessionSeconds: payment.sessionSeconds,
+      accessLabel: payment.accessLabel,
+      kind: payment.kind,
       method: "sendToken",
     };
   }
 
-  throw new Error(result?.error?.message || result?.reason || "Tip was not completed.");
+  throw new Error(result?.error?.message || result?.reason || "Payment was not completed.");
 }
 
 async function connectWallet() {
@@ -301,7 +345,7 @@ async function connectWallet() {
         state.walletAddress = address;
         state.walletKind = candidate.kind;
         updateWalletUi();
-        els.tipStatus.textContent = "Wallet connected. You can leave the tip now.";
+        els.tipStatus.textContent = "Wallet connected. Choose the ETH tip or the monthly dishes pass.";
         return candidate.provider;
       } catch (error) {
         lastError = error;
@@ -355,35 +399,46 @@ function browserWalletProviders() {
   return providers;
 }
 
-async function sendTipWithEthereumProvider(provider) {
+async function sendPaymentWithEthereumProvider(provider, payment) {
   if (!provider?.request) {
     throw new Error("Wallet provider unavailable");
   }
 
-  const tokenAddress = tokenAddressFromCaip19(state.tipRecipient.token.caip19);
-  if (!tokenAddress) throw new Error("Tip token unavailable");
-  if (!isEvmAddress(state.tipRecipient.recipientAddress)) throw new Error("Tip recipient unavailable");
+  if (!payment?.token?.caip19) throw new Error("Payment token unavailable");
+  if (!isEvmAddress(payment.recipientAddress)) throw new Error("Payment recipient unavailable");
 
   const from = state.walletAddress || (await connectedWalletAddress(provider));
   if (!isEvmAddress(from)) throw new Error("Wallet not connected");
 
   await ensureBaseChain(provider);
+  const transactionParams = isNativeToken(payment.token)
+    ? {
+        from,
+        to: payment.recipientAddress,
+        value: bigintToHex(payment.amount),
+      }
+    : {
+        from,
+        to: tokenAddressFromCaip19(payment.token.caip19) || payment.token.address,
+        value: "0x0",
+        data: encodeErc20Transfer(payment.recipientAddress, payment.amount),
+      };
+
+  if (!isEvmAddress(transactionParams.to)) throw new Error("Payment token unavailable");
+
   const transaction = await provider.request({
     method: "eth_sendTransaction",
-    params: [
-      {
-        from,
-        to: tokenAddress,
-        value: "0x0",
-        data: encodeErc20Transfer(state.tipRecipient.recipientAddress, state.tipAmount),
-      },
-    ],
+    params: [transactionParams],
   });
 
   return {
     transaction,
-    amount: state.tipAmount,
-    recipientAddress: state.tipRecipient.recipientAddress,
+    amount: payment.amount,
+    recipientAddress: payment.recipientAddress,
+    token: payment.token,
+    sessionSeconds: payment.sessionSeconds,
+    accessLabel: payment.accessLabel,
+    kind: payment.kind,
     method: "eip1193",
   };
 }
@@ -428,7 +483,7 @@ function walletErrorMessage(error) {
   if (shouldTryProviderFallback(message)) {
     return "Wallet not connected. Use Connect wallet, or open Rektaurant from the Farcaster mobile app if Farcaster web cannot attach your wallet.";
   }
-  return `Tip cancelled or failed: ${message}`;
+  return `Payment cancelled or failed: ${message}`;
 }
 
 function updateWalletUi() {
@@ -442,7 +497,8 @@ function updateWalletUi() {
 }
 
 function openSession(receipt) {
-  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const sessionSeconds = Number(receipt?.sessionSeconds || 10 * 60);
+  const expiresAt = Date.now() + sessionSeconds * 1000;
   state.sessionExpiresAt = expiresAt;
   localStorage.setItem(
     tipSessionKey,
@@ -452,7 +508,7 @@ function openSession(receipt) {
       openedAt: new Date().toISOString(),
     }),
   );
-  els.tipStatus.textContent = "Tip received. Your table is ready for 10 minutes.";
+  els.tipStatus.textContent = `${receipt?.accessLabel || "Access"} received. Your table is ready.`;
   unlockApp();
   loadMenu({ force: true });
 }
@@ -509,12 +565,24 @@ function updateSessionTimer() {
   if (remaining <= 0) {
     localStorage.removeItem(tipSessionKey);
     lockApp();
-    els.tipStatus.textContent = "Your 10 minute session expired. Leave another tip to re-enter.";
+    els.tipStatus.textContent = "Your Rektaurant session expired. Tip ETH or send pappardelle dishes to re-enter.";
     window.scrollTo({ top: 0, behavior: "smooth" });
     return;
   }
 
   const totalSeconds = Math.ceil(remaining / 1000);
+  if (totalSeconds >= 24 * 60 * 60) {
+    const days = Math.floor(totalSeconds / (24 * 60 * 60));
+    const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / 3600);
+    els.sessionTimer.textContent = `${days}d ${hours}h`;
+    return;
+  }
+  if (totalSeconds >= 3600) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    els.sessionTimer.textContent = `${hours}h ${minutes}m`;
+    return;
+  }
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
   const seconds = String(totalSeconds % 60).padStart(2, "0");
   els.sessionTimer.textContent = `${minutes}:${seconds}`;
@@ -928,6 +996,16 @@ function normalizeApiBase(value) {
 function tokenAddressFromCaip19(value) {
   const match = String(value || "").match(/\/erc20:(0x[a-fA-F0-9]{40})$/);
   return match?.[1] || "";
+}
+
+function isNativeToken(token) {
+  return Boolean(token?.native) || /\/(?:native|slip44:60)$/i.test(String(token?.caip19 || ""));
+}
+
+function bigintToHex(value) {
+  const amount = BigInt(String(value || "0"));
+  if (amount <= 0n) throw new Error("Payment amount unavailable");
+  return `0x${amount.toString(16)}`;
 }
 
 function encodeErc20Transfer(recipientAddress, amount) {

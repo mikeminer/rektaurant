@@ -47,22 +47,29 @@
         <p class="eyebrow">Reservation required</p>
         <h1 id="tip-title">Tip the pass to enter Rektaurant</h1>
         <p class="tip-copy">
-          Leave a USDC tip to <strong>pappardelle.eth</strong>. After the transaction is completed, your table stays open for 10 minutes.
+          Leave an ETH tip on Base for a 10 minute table, or send 10,000,000 pappardelle dishes for a monthly pass.
         </p>
-        <div class="tip-amounts" role="group" aria-label="Tip amount">
-          <button type="button" data-tip-amount="500000">0.50 USDC</button>
-          <button type="button" data-tip-amount="1000000" class="active">1 USDC</button>
-          <button type="button" data-tip-amount="3000000">3 USDC</button>
+        <div class="tip-amounts" role="group" aria-label="ETH tip amount">
+          <button type="button" data-tip-amount="200000000000000">0.0002 ETH</button>
+          <button type="button" data-tip-amount="500000000000000" class="active">0.0005 ETH</button>
+          <button type="button" data-tip-amount="1000000000000000">0.001 ETH</button>
         </div>
         <div class="tip-receipt">
           <span>Recipient</span>
           <strong id="tipRecipient">Resolving pappardelle.eth</strong>
           <span>Network</span>
-          <strong>Base USDC</strong>
+          <strong>Base ETH</strong>
           <span>Session</span>
-          <strong>10 minutes</strong>
+          <strong>10 min or 1 month</strong>
         </div>
-        <button class="primary-action tip-action" id="tipButton" type="button">Leave tip and enter</button>
+        <button class="primary-action tip-action" id="tipButton" type="button">Tip ETH and enter</button>
+        <div class="monthly-pass">
+          <p>Monthly special: buy pappardelle on Zora, then send 10,000,000 dishes to unlock Rektaurant for 1 month.</p>
+          <div>
+            <a class="quiet-action zora-action" href="https://zora.co/@pappardelle/creator-coin" target="_blank" rel="noopener noreferrer">Buy on Zora</a>
+            <button class="quiet-action monthly-action" id="monthlyPassButton" type="button">Send dishes monthly pass</button>
+          </div>
+        </div>
         <button class="quiet-action notify-action" id="gateNotifyButton" type="button">Turn on notifications</button>
         <div class="wallet-dock" id="walletDock">
           <button class="quiet-action" id="connectWalletButton" type="button">Connect wallet</button>

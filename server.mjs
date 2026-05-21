@@ -35,10 +35,25 @@ const config = {
   tipRecipientName: process.env.REKTAURANT_TIP_ENS || "pappardelle.eth",
   tipRecipientAddress: process.env.REKTAURANT_TIP_ADDRESS || "0x5D69C42A3a481d0CCFd88CFA8a2a08e2BF456134",
   tipToken: {
-    symbol: "USDC",
+    symbol: "ETH",
     chain: "Base",
-    caip19: "eip155:8453/erc20:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    decimals: 6,
+    caip19: "eip155:8453/slip44:60",
+    decimals: 18,
+    native: true,
+  },
+  monthlyPass: {
+    recipientAddress: process.env.REKTAURANT_DISH_PASS_ADDRESS || "0xce749cde53b8e6791f300555d9ee8b1df9b21f65",
+    token: {
+      symbol: "pappardelle",
+      chain: "Base",
+      address: "0x41859a1048fb4f8d668861b1249504bf52e6d3bd",
+      caip19: "eip155:8453/erc20:0x41859a1048fb4f8d668861b1249504bf52e6d3bd",
+      decimals: 18,
+    },
+    amountLabel: "10,000,000 pappardelle dishes",
+    amount: "10000000000000000000000000",
+    sessionSeconds: 30 * 24 * 60 * 60,
+    zoraUrl: "https://zora.co/@pappardelle/creator-coin",
   },
 };
 
@@ -408,10 +423,10 @@ function farcasterManifest(origin) {
 }
 
 function tipRecipient() {
-  if (!isEvmAddress(config.tipRecipientAddress)) {
+  if (!isEvmAddress(config.tipRecipientAddress) || !isEvmAddress(config.monthlyPass.recipientAddress)) {
     return {
       ok: false,
-      error: "Invalid REKTAURANT_TIP_ADDRESS",
+      error: "Invalid payment recipient address",
       recipientName: config.tipRecipientName,
       token: config.tipToken,
     };
@@ -424,10 +439,11 @@ function tipRecipient() {
     token: config.tipToken,
     sessionSeconds: 10 * 60,
     suggestedTips: [
-      { label: "0.50 USDC", amount: "500000" },
-      { label: "1 USDC", amount: "1000000" },
-      { label: "3 USDC", amount: "3000000" },
+      { label: "0.0002 ETH", amount: "200000000000000" },
+      { label: "0.0005 ETH", amount: "500000000000000" },
+      { label: "0.001 ETH", amount: "1000000000000000" },
     ],
+    monthlyPass: config.monthlyPass,
   };
 }
 
