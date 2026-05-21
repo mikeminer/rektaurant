@@ -1,11 +1,12 @@
 {
   "name": "Rektaurant",
   "short_name": "Rektaurant",
-  "description": "Restaurant themed Hyperliquid signal menu for Farcaster.",
+  "description": "Base and Farcaster Mini App serving Hyperliquid long and short crypto signals as a restaurant menu.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#171214",
   "theme_color": "#171214",
+  "categories": ["finance", "social", "utilities"],
   "icons": [
     {
       "src": "/assets/splash-200.png",

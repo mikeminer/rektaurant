@@ -12,6 +12,7 @@ if (process.env.REKTAURANT_STRICT_TLS !== "true") {
 }
 
 const config = {
+  publicAppUrl: stripTrailingSlash(process.env.REKTAURANT_PUBLIC_URL || (process.env.VERCEL ? "https://rektaurant.vercel.app" : "")),
   mccApiBase: stripTrailingSlash(process.env.MCC_API_BASE || "https://important-bullet-sam-affiliates.trycloudflare.com"),
   allowClientApiOverride:
     process.env.REKTAURANT_ALLOW_CLIENT_API_OVERRIDE === "true" ||
@@ -73,8 +74,9 @@ const memoryNotificationTokens = new Map();
 
 export async function rektaurantHandler(request, response) {
   try {
-    const origin = requestOrigin(request);
-    const url = new URL(request.url || "/", origin);
+    const requestUrl = requestOrigin(request);
+    const origin = config.publicAppUrl || requestUrl;
+    const url = new URL(request.url || "/", requestUrl);
 
     if (url.pathname === "/api/app") {
       await serveStatic(response, "/", origin);
@@ -153,6 +155,21 @@ export async function rektaurantHandler(request, response) {
         upstream: await upstreamHealth(),
         generatedAt: new Date().toISOString(),
       });
+      return;
+    }
+
+    if (url.pathname === "/robots.txt") {
+      await textResponse(response, robotsTxt(origin));
+      return;
+    }
+
+    if (url.pathname === "/sitemap.xml") {
+      await xmlResponse(response, await sitemapXml(origin));
+      return;
+    }
+
+    if (url.pathname === "/llms.txt") {
+      await textResponse(response, llmsTxt(origin));
       return;
     }
 
@@ -408,18 +425,72 @@ function farcasterManifest(origin) {
       splashImageUrl: `${origin}/assets/splash-200.png`,
       splashBackgroundColor: "#171214",
       webhookUrl: `${origin}/api/webhook`,
-      subtitle: "Perp tasting menu",
-      description: "Restaurant themed Hyperliquid signal menu for read only market research.",
+      subtitle: "Base signal menu",
+      description: "Base and Farcaster Mini App serving restaurant themed Hyperliquid long and short signal dishes for read only market research.",
       primaryCategory: "finance",
-      tags: ["hyperliquid", "signals", "crypto", "defi", "menu"],
+      tags: ["base", "hyperliquid", "signals", "crypto", "farcaster"],
       heroImageUrl: `${origin}/assets/hero-1200x630.png`,
-      ogTitle: "Rektaurant",
-      ogDescription: "A restaurant themed Farcaster Mini App for Hyperliquid long and short signal dishes.",
+      ogTitle: "Rektaurant | Base Mini App for Hyperliquid Signals",
+      ogDescription: "A restaurant themed crypto signal menu for Base, Farcaster, and Hyperliquid hunters.",
       ogImageUrl: `${origin}/assets/hero-1200x630.png`,
       requiredCapabilities: ["actions.ready", "actions.composeCast", "actions.addMiniApp", "actions.sendToken"],
       noindex: process.env.REKTAURANT_NOINDEX === "true",
     },
   };
+}
+
+function robotsTxt(origin) {
+  return [
+    "User-agent: *",
+    "Allow: /",
+    "Disallow: /api/",
+    "Disallow: /_vercel/",
+    "",
+    `Sitemap: ${origin}/sitemap.xml`,
+    "",
+  ].join("\n");
+}
+
+async function sitemapXml(origin) {
+  let lastmod = new Date().toISOString().slice(0, 10);
+  try {
+    const indexStat = await stat(path.join(publicDir, "index.html"));
+    lastmod = indexStat.mtime.toISOString().slice(0, 10);
+  } catch {
+    // Keep the request date if the static file timestamp is unavailable.
+  }
+
+  const homeUrl = xmlEscape(`${origin}/`);
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    "  <url>",
+    `    <loc>${homeUrl}</loc>`,
+    `    <lastmod>${lastmod}</lastmod>`,
+    "    <changefreq>hourly</changefreq>",
+    "    <priority>1.0</priority>",
+    "  </url>",
+    "</urlset>",
+    "",
+  ].join("\n");
+}
+
+function llmsTxt(origin) {
+  return [
+    "# Rektaurant",
+    "",
+    "> Base and Farcaster Mini App that serves Hyperliquid long and short crypto signals as a restaurant themed menu.",
+    "",
+    `Canonical: ${origin}/`,
+    "Repository: https://github.com/mikeminer/rektaurant",
+    "Creator: pappardelle.eth",
+    "Creator profile: https://github.com/mikeminer",
+    "Creator coin: https://zora.co/@pappardelle/creator-coin",
+    "",
+    "Topics: Base, Based ecosystem, Farcaster Mini Apps, Hyperliquid, crypto signals, DeFi, long/short market research, pappardelle.",
+    "Positioning: read-only signal discovery for crypto hunters; Rektaurant does not place trades or provide execution approval.",
+    "",
+  ].join("\n");
 }
 
 function tipRecipient() {
@@ -867,10 +938,27 @@ async function textResponse(response, text, status = 200) {
   response.end(text);
 }
 
+async function xmlResponse(response, xml, status = 200) {
+  response.writeHead(status, {
+    "content-type": "application/xml; charset=utf-8",
+    "cache-control": "public, max-age=3600",
+  });
+  response.end(xml);
+}
+
 function requestOrigin(request) {
   const proto = request.headers["x-forwarded-proto"] || "http";
   const host = request.headers["x-forwarded-host"] || request.headers.host || `localhost:${port}`;
   return `${proto}://${host}`;
+}
+
+function xmlEscape(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }
 
 function isDirectRun() {

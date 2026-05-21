@@ -711,7 +711,7 @@ function renderTicket(dish) {
 }
 
 async function shareSpecial(target = "farcaster") {
-  const { text, url } = shareCopy();
+  const { text, url } = shareCopy(target);
   if (target === "twitter") {
     const intent = new URL("https://twitter.com/intent/tweet");
     intent.searchParams.set("text", text);
@@ -734,16 +734,24 @@ async function shareSpecial(target = "farcaster") {
   els.serviceStatus.textContent = "Farcaster special copied";
 }
 
-function shareCopy() {
+function shareCopy(target = "farcaster") {
   const dish = selectedDish() || filteredDishes()[0];
   const text = dish
-    ? `You didn't eat? Don't waste that delicious alpha. Rektaurant is serving ${dish.coin} ${dish.side.toUpperCase()} as ${dish.dishName}. Hot long/short signals, plated with risk notes.`
-    : "You didn't eat? Don't waste that delicious alpha. Rektaurant is serving hot Hyperliquid long/short signal plates with risk notes.";
+    ? `You didn't eat? Don't waste that delicious alpha. Rektaurant is serving ${dish.coin} ${dish.side.toUpperCase()} as ${dish.dishName}. Base mini app signal plates with risk notes.`
+    : "You didn't eat? Don't waste that delicious alpha. Rektaurant is serving hot Base mini app signal plates with Hyperliquid long/short risk notes.";
 
   return {
     text,
-    url: window.location.origin === "null" ? "https://rektaurant.vercel.app/" : window.location.href,
+    url: shareUrl(target),
   };
+}
+
+function shareUrl(target = "farcaster") {
+  const url = new URL(window.location.origin === "null" ? "https://rektaurant.vercel.app/" : window.location.href);
+  url.searchParams.set("utm_source", target === "twitter" ? "twitter" : "farcaster");
+  url.searchParams.set("utm_medium", "social");
+  url.searchParams.set("utm_campaign", "rektaurant_base_signals");
+  return url.toString();
 }
 
 function bindFarcasterEvents() {
