@@ -2,6 +2,39 @@
 
 Mini app Farcaster a tema ristorante per servire segnali Hyperliquid come piatti: coin, lato long/short, entry, target, invalidation, punteggi e note di rischio.
 
+## Hiro Platform / Stacks
+
+Il repository e pronto per essere importato in Hiro Platform da:
+
+```text
+https://platform.hiro.so/git-projects/new
+```
+
+Project GitHub:
+
+```text
+https://github.com/mikeminer/rektaurant
+```
+
+Il progetto Stacks e nella root del repository:
+
+```text
+Clarinet.toml
+contracts/rektaurant-vault.clar
+```
+
+Contract name:
+
+```text
+rektaurant-vault
+```
+
+Se non lo vedi nella lista di Hiro, apri la configurazione GitHub dell'app Hiro e concedi accesso al repository `mikeminer/rektaurant`. Dopo l'import puoi deployare il contratto da Hiro e copiare il contract id in Vercel:
+
+```text
+REKTAURANT_STACKS_CONTRACT_ID=SP...YOURADDRESS.rektaurant-vault
+```
+
 ## MCC SaaS implementation model
 
 Questo progetto e anche il primo consumer implementation del sistema MCC SaaS:
