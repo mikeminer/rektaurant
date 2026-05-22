@@ -79,6 +79,8 @@ const els = {
   longMetric: document.querySelector("#longMetric"),
   shortMetric: document.querySelector("#shortMetric"),
   avgMetric: document.querySelector("#avgMetric"),
+  missedCallout: document.querySelector("#missedCallout"),
+  missedNotifyButton: document.querySelector("#missedNotifyButton"),
 };
 
 boot();
@@ -121,6 +123,7 @@ function bindControls() {
   });
   els.gateNotifyButton.addEventListener("click", turnOnNotifications);
   els.saveButton.addEventListener("click", turnOnNotifications);
+  els.missedNotifyButton.addEventListener("click", turnOnNotifications);
 
   document.querySelectorAll("[data-mode]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -882,6 +885,8 @@ function renderSummary(menu) {
 function renderMenu() {
   const dishes = filteredDishes();
   els.menuList.innerHTML = "";
+  const hasMissedPlates = dishes.some(isMissedDish);
+  els.missedCallout.hidden = !hasMissedPlates;
 
   if (dishes.length === 0) {
     const empty = state.mode === "wave-rider"
@@ -902,6 +907,7 @@ function renderMenu() {
     node.dataset.id = dish.id;
     node.classList.toggle("selected", dish.id === state.selectedId);
     node.classList.toggle("short", dish.side === "short");
+    node.classList.toggle("missed", isMissedDish(dish));
     node.querySelector(".course").textContent = dish.course;
     node.querySelector("h3").textContent = dish.dishName;
     node.querySelector(".side-badge").textContent = dish.side.toUpperCase();
@@ -963,6 +969,9 @@ function renderTicket(dish) {
   }
 
   const sideClass = dish.side === "short" ? "short-text" : "long-text";
+  const missedNotice = isMissedDish(dish)
+    ? '<p class="ticket-alert">Past expired signal missed. Turn on notifications to catch the next hot plate as soon as it leaves the kitchen.</p>'
+    : "";
   els.ticket.innerHTML = `
     <p class="eyebrow">Chef's ticket</p>
     <div class="ticket-title">
@@ -970,6 +979,7 @@ function renderTicket(dish) {
       <span>${escapeHtml(dish.recommendation)}</span>
     </div>
     <p class="ticket-dish">${escapeHtml(dish.dishName)}</p>
+    ${missedNotice}
     <div class="price-board">
       ${ticketMetric("Entry", formatUsd(dish.entryUsd))}
       ${ticketMetric("Target", formatUsd(dish.targetUsd))}
@@ -1188,6 +1198,7 @@ function setNotificationUi(label, action = notificationActionForLabel(label)) {
   state.notificationAction = action;
   els.gateNotifyButton.textContent = label;
   els.saveButton.textContent = label;
+  els.missedNotifyButton.textContent = label;
 }
 
 function notificationActionForLabel(label) {
@@ -1330,6 +1341,12 @@ function ticketMetric(label, value) {
 function scoreRow(label, value) {
   const width = Math.max(4, Math.min(100, Number(value) || 0));
   return `<div class="score-row"><span>${label}</span><div><i style="width:${width}%"></i></div><strong>${value}</strong></div>`;
+}
+
+function isMissedDish(dish) {
+  const lifecycle = String(dish?.lifecycle || "").toUpperCase();
+  const recommendation = String(dish?.recommendation || "").toUpperCase();
+  return ["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle) || recommendation === "REVIEW_RESOLVED";
 }
 
 function sourceLabel(source) {

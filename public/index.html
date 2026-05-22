@@ -85,7 +85,7 @@
         ]
       }
     </script>
-    <link rel="stylesheet" href="styles.css?v=waverider1" />
+    <link rel="stylesheet" href="styles.css?v=missedplates1" />
   </head>
   <body class="is-locked">
     <section class="closed-gate" id="closedGate" aria-labelledby="closed-title" hidden>
@@ -262,6 +262,15 @@
         </div>
       </section>
 
+      <section class="missed-callout" id="missedCallout" hidden>
+        <div>
+          <p class="eyebrow">Missed plates</p>
+          <h3>Some signals already left the kitchen.</h3>
+          <p>Turn on notifications to catch hot long and short plates as soon as the chef puts them on the pass.</p>
+        </div>
+        <button class="quiet-action" id="missedNotifyButton" type="button">Turn on notifications</button>
+      </section>
+
       <section class="menu-layout">
         <div class="menu-list" id="menuList" aria-label="Signal dishes"></div>
         <aside class="ticket" id="ticket" aria-label="Selected signal details">
@@ -301,6 +310,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=waverider1"></script>
+    <script type="module" src="app.js?v=missedplates1"></script>
   </body>
 </html>

@@ -350,14 +350,15 @@ function signalToDish(signal, index, operationMode = "opportunistic") {
   const entryScore = round(numberOrNull(signal.entryScore) ?? 0, 0);
   const timing = round(numberOrNull(signal.timingScore) ?? 0, 0);
   const alpha = round(numberOrNull(signal.alphaScore) ?? 0, 0);
+  const missed = isMissedSignal(signal);
 
   return {
     id: signal.id || `mcc-${index}`,
     coin: signal.symbol,
     side: normalizeSignalSide(signal.side),
     dishName: dishName(signal.symbol, normalizeSignalSide(signal.side), index),
-    course: operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
-    chefCall: operationMode === "wave-rider" ? "Quick bite, strict stop" : chefCall(signal.recommendation, signal.quantAction),
+    course: missed ? "Missed plate" : operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
+    chefCall: missed ? "Too late for service" : operationMode === "wave-rider" ? "Quick bite, strict stop" : chefCall(signal.recommendation, signal.quantAction),
     recommendation: signal.recommendation,
     decision: signal.decision,
     lifecycle: signal.lifecycleState,
@@ -373,7 +374,7 @@ function signalToDish(signal, index, operationMode = "opportunistic") {
     allowedForExecutionLayer: Boolean(signal.allowedForExecutionLayer),
     scores: { setup, entry: entryScore, timing, alpha },
     volumeUsd24h: 0,
-    plating: operationMode === "wave-rider" ? "Hot plate, quick bite, strict invalidation" : platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
+    plating: missed ? "Past expired signal missed. Enable notifications to catch the next hot plate as it leaves the kitchen." : operationMode === "wave-rider" ? "Hot plate, quick bite, strict invalidation" : platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
     reasons: Array.isArray(signal.why) ? signal.why.slice(0, 4) : [],
     warnings: Array.isArray(signal.warnings) ? signal.warnings.slice(0, 4) : [],
   };
@@ -1187,8 +1188,14 @@ function courseFor(recommendation, lifecycle) {
   if (recommendation === "WAIT_PULLBACK") return "Resting pullback";
   if (recommendation === "WAIT_BREAKOUT") return "Breakout oven";
   if (recommendation === "WATCH_SLOW_BURN") return "Slow-burn tasting";
-  if (lifecycle === "RESOLVED") return "After-service review";
+  if (["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle)) return "Missed plate";
   return "Watchlist mise en place";
+}
+
+function isMissedSignal(signal) {
+  const lifecycle = String(signal?.lifecycleState || signal?.lifecycle || "").toUpperCase();
+  const recommendation = String(signal?.recommendation || "").toUpperCase();
+  return ["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle) || recommendation === "REVIEW_RESOLVED";
 }
 
 function chefCall(recommendation, quantAction) {

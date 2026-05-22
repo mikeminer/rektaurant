@@ -347,6 +347,7 @@ button {
 .service-board,
 .controls,
 .summary-strip,
+.missed-callout,
 .menu-layout,
 .footer-note {
   width: 100%;
@@ -620,6 +621,38 @@ h3 {
   font-size: 1.3rem;
 }
 
+.missed-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(215, 154, 91, 0.38);
+  border-radius: 8px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(215, 154, 91, 0.15), rgba(216, 79, 63, 0.08)),
+    rgba(18, 14, 16, 0.82);
+}
+
+.missed-callout[hidden] {
+  display: none;
+}
+
+.missed-callout h3 {
+  margin-bottom: 6px;
+}
+
+.missed-callout p:last-child {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.missed-callout button {
+  flex: 0 0 auto;
+}
+
 .menu-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.72fr);
@@ -660,6 +693,21 @@ h3 {
 .dish-card.short.selected {
   border-color: rgba(216, 79, 63, 0.78);
   outline-color: rgba(216, 79, 63, 0.22);
+}
+
+.dish-card.missed {
+  border-color: rgba(215, 154, 91, 0.4);
+  background:
+    linear-gradient(180deg, rgba(215, 154, 91, 0.12), rgba(255, 247, 235, 0.025)),
+    rgba(18, 14, 16, 0.8);
+}
+
+.dish-card.missed .course {
+  color: #ffcf8a;
+}
+
+.dish-card.missed .plating {
+  color: rgba(246, 234, 216, 0.82);
 }
 
 .dish-head {
@@ -782,6 +830,15 @@ h3 {
 .ticket-dish {
   color: var(--paper);
   font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+.ticket-alert {
+  border: 1px solid rgba(215, 154, 91, 0.34);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--paper);
+  background: rgba(215, 154, 91, 0.1);
   line-height: 1.45;
 }
 
