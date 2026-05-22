@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT || 5173);
+const recentMissedAfterSeconds = 5 * 60;
 
 if (process.env.REKTAURANT_STRICT_TLS !== "true") {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -454,21 +455,22 @@ function signalToDish(signal, index, context = {}) {
   const entryScore = round(numberOrNull(signal.entryScore) ?? 0, 0);
   const timing = round(numberOrNull(signal.timingScore) ?? 0, 0);
   const alpha = round(numberOrNull(signal.alphaScore) ?? 0, 0);
-  const missed = recentSignal ? recentSignal.outcome !== "open" : isMissedSignal(signal);
   const servedAt = signalTimestamp(signal) || context.snapshotGeneratedAt || context.feedGeneratedAt || new Date().toISOString();
+  const plateAgeSeconds = ageSeconds(servedAt);
+  const missed = recentSignal ? isMissedRecentSignal(recentSignal, plateAgeSeconds) : isMissedSignal(signal);
 
   return {
     id: signal.id || `mcc-${index}`,
     coin: signal.symbol,
     side: normalizeSignalSide(signal.side),
     dishName: dishName(signal.symbol, normalizeSignalSide(signal.side), index),
-    course: recentSignal ? (missed ? "Recent missed plate" : "Recent live plate") : missed ? "Missed plate" : operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
+    course: recentSignal ? recentCourseFor(recentSignal, missed) : missed ? "Missed plate" : operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
     chefCall: recentSignal ? `${recentSignal.decision} · ${recentSignal.outcome}` : missed ? "Too late for service" : operationMode === "wave-rider" ? "Quick bite, strict stop" : chefCall(signal.recommendation, signal.quantAction),
     recommendation: signal.recommendation,
     decision: signal.decision,
     lifecycle: signal.lifecycleState,
     servedAt,
-    plateAgeSeconds: ageSeconds(servedAt),
+    plateAgeSeconds,
     plateAgeBasis: signalTimestamp(signal) ? "signal" : context.snapshotGeneratedAt ? "snapshot" : "feed",
     confidence,
     expectedValuePct: numberOrNull(signal.expectedValuePct),
@@ -1505,6 +1507,18 @@ function isMissedSignal(signal) {
   const lifecycle = String(signal?.lifecycleState || signal?.lifecycle || "").toUpperCase();
   const recommendation = String(signal?.recommendation || "").toUpperCase();
   return ["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle) || recommendation === "REVIEW_RESOLVED";
+}
+
+function isMissedRecentSignal(recentSignal, plateAgeSeconds) {
+  const outcome = String(recentSignal?.outcome || "").toLowerCase();
+  if (outcome === "open") return false;
+  const age = Number(plateAgeSeconds);
+  return Number.isFinite(age) ? age > recentMissedAfterSeconds : ["expired", "cancelled", "canceled"].includes(outcome);
+}
+
+function recentCourseFor(recentSignal, missed) {
+  if (missed) return "Recent missed plate";
+  return String(recentSignal?.outcome || "").toLowerCase() === "open" ? "Recent live plate" : "Recent served plate";
 }
 
 function signalTimestamp(signal) {

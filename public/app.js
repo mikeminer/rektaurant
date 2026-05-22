@@ -27,6 +27,7 @@ const state = {
 
 const apiBase = window.location.protocol === "file:" ? "http://localhost:5173" : "";
 const tipSessionKey = "rektaurant_tip_session_v1";
+const recentMissedAfterSeconds = 5 * 60;
 const baseChainId = "0x2105";
 const baseChainParams = {
   chainId: baseChainId,
@@ -1473,19 +1474,30 @@ function scoreRow(label, value) {
 }
 
 function isMissedDish(dish) {
+  if (dish?.recentSignal) {
+    const outcome = String(dish.recentSignal.outcome || "").toLowerCase();
+    if (outcome === "open") return false;
+    const seconds = dishAgeSeconds(dish);
+    return seconds === null ? ["expired", "cancelled", "canceled"].includes(outcome) : seconds > recentMissedAfterSeconds;
+  }
+
   const lifecycle = String(dish?.lifecycle || "").toUpperCase();
   const recommendation = String(dish?.recommendation || "").toUpperCase();
   return ["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle) || recommendation === "REVIEW_RESOLVED";
 }
 
-function plateAgeLabel(dish) {
+function dishAgeSeconds(dish) {
   const servedAt = Date.parse(String(dish?.servedAt || ""));
   const fallbackSeconds = Number(dish?.plateAgeSeconds);
-  const seconds = Number.isFinite(servedAt)
+  return Number.isFinite(servedAt)
     ? Math.max(0, Math.round((Date.now() - servedAt) / 1000))
     : Number.isFinite(fallbackSeconds)
       ? Math.max(0, Math.round(fallbackSeconds))
       : null;
+}
+
+function plateAgeLabel(dish) {
+  const seconds = dishAgeSeconds(dish);
   if (seconds === null) return "Plate age unavailable";
   const prefix = dish?.recentSignal ? "Served" : isMissedDish(dish) ? "Missed" : "Served";
   return `${prefix} ${formatDurationAgo(seconds)} ago`;
