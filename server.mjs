@@ -1084,10 +1084,12 @@ function isWaveRiderSignal(signal, minSetupScore = 0) {
   const entry = numberOrNull(signal.entryScore) ?? 0;
   const confidence = numberOrNull(signal.confidence) ?? 0;
   const actionableDecision = ["ENTER_NOW", "PAPER_ONLY", "WATCH_SETUP", "EARLY_ALERT"].includes(decision);
-  const activeLifecycle = !["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle);
+  const blockedStates = ["AVOID", "SKIP", "SKIP_TRADE", "NO_TRADE", "RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"];
+  const activeLifecycle = !blockedStates.includes(lifecycle);
+  const usefulRecommendation = !blockedStates.includes(recommendation) && recommendation !== "REVIEW_RESOLVED";
   const shortWindow = waitMinutes === null || waitMinutes <= 12;
   const enoughSignalQuality = setup >= minSetupScore && timing >= 28 && (entry >= 8 || confidence >= 55);
-  return actionableDecision && activeLifecycle && shortWindow && enoughSignalQuality && recommendation !== "REVIEW_RESOLVED";
+  return actionableDecision && activeLifecycle && usefulRecommendation && shortWindow && enoughSignalQuality;
 }
 
 function waveRiderSort(a, b) {
