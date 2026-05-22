@@ -3,6 +3,7 @@ const state = {
   side: "",
   minSetupScore: 24,
   dishes: [],
+  recentSignals: [],
   selectedId: null,
   lastMenu: null,
   sdk: null,
@@ -80,6 +81,9 @@ const els = {
   longMetric: document.querySelector("#longMetric"),
   shortMetric: document.querySelector("#shortMetric"),
   avgMetric: document.querySelector("#avgMetric"),
+  recentBoard: document.querySelector("#recentBoard"),
+  recentSignalsList: document.querySelector("#recentSignalsList"),
+  recentNotifyButton: document.querySelector("#recentNotifyButton"),
   missedCallout: document.querySelector("#missedCallout"),
   missedNotifyButton: document.querySelector("#missedNotifyButton"),
 };
@@ -125,6 +129,7 @@ function bindControls() {
   });
   els.gateNotifyButton.addEventListener("click", turnOnNotifications);
   els.saveButton.addEventListener("click", turnOnNotifications);
+  els.recentNotifyButton.addEventListener("click", turnOnNotifications);
   els.missedNotifyButton.addEventListener("click", turnOnNotifications);
 
   document.querySelectorAll("[data-mode]").forEach((button) => {
@@ -862,14 +867,18 @@ async function loadMenu({ force = false } = {}) {
     const menu = await response.json();
     state.lastMenu = menu;
     state.dishes = Array.isArray(menu.dishes) ? menu.dishes : [];
+    state.recentSignals = Array.isArray(menu.recentSignals) ? menu.recentSignals : state.dishes.map((dish) => dish.recentSignal).filter(Boolean);
     state.selectedId = state.dishes[0]?.id || null;
     renderSummary(menu);
+    renderRecentSignals();
     renderMenu();
     renderTicket(selectedDish());
     els.updatedAt.textContent = `Served ${formatDate(menu.generatedAt)} from ${sourceLabel(menu.source)}`;
     els.serviceStatus.textContent = menu.upstreamError ? "Premium feed paused" : menu.summary?.title || "Menu served";
   } catch (error) {
     els.serviceStatus.textContent = "Kitchen delay";
+    state.recentSignals = [];
+    renderRecentSignals();
     els.menuList.innerHTML = `<div class="empty-state"><h3>Service paused</h3><p>${escapeHtml(String(error.message || error))}</p></div>`;
   } finally {
     els.refreshButton.disabled = false;
@@ -883,6 +892,47 @@ function renderSummary(menu) {
   els.longMetric.textContent = String(menu.summary?.longCount ?? 0);
   els.shortMetric.textContent = String(menu.summary?.shortCount ?? 0);
   els.avgMetric.textContent = String(menu.summary?.averageSetup ?? 0);
+}
+
+function renderRecentSignals() {
+  const recentSignals = state.recentSignals.slice(0, 8);
+  els.recentBoard.hidden = recentSignals.length === 0;
+  els.recentSignalsList.innerHTML = "";
+  if (!recentSignals.length) return;
+
+  recentSignals.forEach((signal) => {
+    const row = document.createElement("tr");
+    const dish = state.dishes.find((item) => item.recentSignal?.id === signal.id || item.recentSignal?.signalUtc === signal.signalUtc);
+    if (dish) {
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `Open ${signal.coin} ${signal.side} recent signal`);
+      row.addEventListener("click", () => {
+        state.selectedId = dish.id;
+        renderMenu();
+        renderTicket(dish);
+        maybeHaptic("selectionChanged");
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        row.click();
+      });
+    }
+
+    row.innerHTML = `
+      <td><strong>${escapeHtml(signal.coin)} · ${escapeHtml(signal.side)}</strong></td>
+      <td class="mono">${escapeHtml(formatUtcTimestamp(signal.signalUtc))}</td>
+      <td>${escapeHtml(signal.decision)}</td>
+      <td class="num">${escapeHtml(formatCompactValue(signal.score))}</td>
+      <td class="num ${outcomeClass(signal.outcome)}">${escapeHtml(signal.outcome)}</td>
+      <td class="num ${outcomeClass(signal.setup)}">${escapeHtml(signal.setup)}</td>
+      <td class="num">${escapeHtml(formatPercent(signal.mfePct))}</td>
+      <td class="num">${escapeHtml(formatPercent(signal.maePct))}</td>
+      <td class="num">${escapeHtml(formatWait(signal.waitMinutes))}</td>
+    `;
+    els.recentSignalsList.append(row);
+  });
 }
 
 function renderMenu() {
@@ -910,15 +960,22 @@ function renderMenu() {
     node.dataset.id = dish.id;
     node.classList.toggle("selected", dish.id === state.selectedId);
     node.classList.toggle("short", dish.side === "short");
+    node.classList.toggle("recent", Boolean(dish.recentSignal));
     node.classList.toggle("missed", isMissedDish(dish));
     node.querySelector(".course").textContent = dish.course;
     node.querySelector("h3").textContent = dish.dishName;
     node.querySelector(".side-badge").textContent = dish.side.toUpperCase();
     node.querySelector(".plating").textContent = dish.plating;
     node.querySelector(".plate-age").textContent = plateAgeLabel(dish);
-    node.querySelector('[data-metric="setup"]').textContent = dish.scores.setup;
-    node.querySelector('[data-metric="entry"]').textContent = dish.scores.entry;
-    node.querySelector('[data-metric="ev"]').textContent = formatPercent(dish.expectedValuePct);
+    const metrics = dishMetrics(dish);
+    Object.entries(metrics.labels).forEach(([key, label]) => {
+      const target = node.querySelector(`[data-metric-label="${key}"]`);
+      if (target) target.textContent = label;
+    });
+    Object.entries(metrics.values).forEach(([key, value]) => {
+      const target = node.querySelector(`[data-metric="${key}"]`);
+      if (target) target.textContent = value;
+    });
     node.querySelector(".confidence-track span").style.width = `${Math.max(5, Math.min(100, dish.confidence))}%`;
     node.addEventListener("click", () => {
       state.selectedId = dish.id;
@@ -935,6 +992,58 @@ function updateModeCopy() {
   els.serviceTitle.textContent = copy.title;
   els.serviceNote.textContent = copy.note;
   els.refreshButton.textContent = copy.refreshLabel;
+}
+
+function dishMetrics(dish) {
+  if (dish.recentSignal) {
+    return {
+      labels: { setup: "Score", entry: "Outcome", ev: "MFE", wait: "Wait" },
+      values: {
+        setup: formatCompactValue(dish.recentSignal.score),
+        entry: dish.recentSignal.outcome,
+        ev: formatPercent(dish.recentSignal.mfePct),
+        wait: formatWait(dish.recentSignal.waitMinutes),
+      },
+    };
+  }
+
+  return {
+    labels: { setup: "Setup", entry: "Entry", ev: "EV", wait: "Wait" },
+    values: {
+      setup: formatCompactValue(dish.scores.setup),
+      entry: formatCompactValue(dish.scores.entry),
+      ev: formatPercent(dish.expectedValuePct),
+      wait: formatWait(dish.waitMinutes),
+    },
+  };
+}
+
+function standardTicketMetrics(dish) {
+  return [
+    ticketMetric("Entry", formatUsd(dish.entryUsd)),
+    ticketMetric("Target", formatUsd(dish.targetUsd)),
+    ticketMetric("Invalidation", formatUsd(dish.invalidationUsd)),
+    ticketMetric("R/R", dish.riskRewardRatio === null ? "n/a" : `${dish.riskRewardRatio}x`),
+    ticketMetric("Confidence", `${dish.confidence}%`),
+    ticketMetric("Plate age", plateAgeLabel(dish), "ticket-age"),
+    ticketMetric("Wait", formatWait(dish.waitMinutes)),
+    ticketMetric("Size", dish.suggestedSizingPct ? `${dish.suggestedSizingPct}%` : "research"),
+  ].join("");
+}
+
+function recentTicketMetrics(dish) {
+  const signal = dish.recentSignal;
+  return [
+    ticketMetric("Decision", escapeHtml(signal.decision)),
+    ticketMetric("Score", formatCompactValue(signal.score)),
+    ticketMetric("Outcome", escapeHtml(signal.outcome)),
+    ticketMetric("Setup", escapeHtml(signal.setup)),
+    ticketMetric("MFE", formatPercent(signal.mfePct)),
+    ticketMetric("MAE", formatPercent(signal.maePct)),
+    ticketMetric("Wait", formatWait(signal.waitMinutes)),
+    ticketMetric("Signal UTC", escapeHtml(formatUtcTimestamp(signal.signalUtc))),
+    ticketMetric("Plate age", plateAgeLabel(dish), "ticket-age"),
+  ].join("");
 }
 
 function modeCopy(mode) {
@@ -976,6 +1085,7 @@ function renderTicket(dish) {
   const missedNotice = isMissedDish(dish)
     ? '<p class="ticket-alert">Past expired signal missed. Turn on notifications to catch the next hot plate as soon as it leaves the kitchen.</p>'
     : "";
+  const priceMetrics = dish.recentSignal ? recentTicketMetrics(dish) : standardTicketMetrics(dish);
   els.ticket.innerHTML = `
     <div class="ticket-plate ${dish.side === "short" ? "short" : ""}" aria-hidden="true"></div>
     <p class="eyebrow">Chef's ticket</p>
@@ -986,13 +1096,7 @@ function renderTicket(dish) {
     <p class="ticket-dish">${escapeHtml(dish.dishName)}</p>
     ${missedNotice}
     <div class="price-board">
-      ${ticketMetric("Entry", formatUsd(dish.entryUsd))}
-      ${ticketMetric("Target", formatUsd(dish.targetUsd))}
-      ${ticketMetric("Invalidation", formatUsd(dish.invalidationUsd))}
-      ${ticketMetric("R/R", dish.riskRewardRatio === null ? "n/a" : `${dish.riskRewardRatio}x`)}
-      ${ticketMetric("Confidence", `${dish.confidence}%`)}
-      ${ticketMetric("Plate age", plateAgeLabel(dish), "ticket-age")}
-      ${ticketMetric("Size", dish.suggestedSizingPct ? `${dish.suggestedSizingPct}%` : "research")}
+      ${priceMetrics}
     </div>
     <div class="score-stack">
       ${scoreRow("Setup", dish.scores.setup)}
@@ -1120,6 +1224,7 @@ async function turnOnNotifications() {
   setNotificationUi("Opening Farcaster");
   els.gateNotifyButton.disabled = true;
   els.saveButton.disabled = true;
+  els.recentNotifyButton.disabled = true;
 
   try {
     await refreshFarcasterContext();
@@ -1155,6 +1260,7 @@ async function turnOnNotifications() {
   } finally {
     els.gateNotifyButton.disabled = false;
     els.saveButton.disabled = false;
+    els.recentNotifyButton.disabled = false;
   }
 }
 
@@ -1164,6 +1270,7 @@ async function openNotificationSettings() {
   els.tipStatus.textContent = "In Farcaster settings, open Notifications or Saved Mini Apps, select Rektaurant, enable notifications, then return and tap Check notifications.";
   els.gateNotifyButton.disabled = true;
   els.saveButton.disabled = true;
+  els.recentNotifyButton.disabled = true;
 
   try {
     const settingsUrl = "https://farcaster.xyz/~/settings";
@@ -1177,6 +1284,7 @@ async function openNotificationSettings() {
   } finally {
     els.gateNotifyButton.disabled = false;
     els.saveButton.disabled = false;
+    els.recentNotifyButton.disabled = false;
     setNotificationUi("Check notifications", "check");
   }
 }
@@ -1185,6 +1293,7 @@ async function checkNotificationState() {
   setNotificationUi("Checking notifications", "check");
   els.gateNotifyButton.disabled = true;
   els.saveButton.disabled = true;
+  els.recentNotifyButton.disabled = true;
 
   try {
     await refreshFarcasterContext();
@@ -1197,6 +1306,7 @@ async function checkNotificationState() {
   } finally {
     els.gateNotifyButton.disabled = false;
     els.saveButton.disabled = false;
+    els.recentNotifyButton.disabled = false;
   }
 }
 
@@ -1204,6 +1314,7 @@ function setNotificationUi(label, action = notificationActionForLabel(label)) {
   state.notificationAction = action;
   els.gateNotifyButton.textContent = label;
   els.saveButton.textContent = label;
+  els.recentNotifyButton.textContent = label;
   els.missedNotifyButton.textContent = label;
 }
 
@@ -1394,11 +1505,18 @@ function formatDurationAgo(seconds) {
 
 function sourceLabel(source) {
   if (source === "mcc") return "MCC";
+  if (source === "mcc-v2-recent") return "MCC recent";
   if (source === "mcc-v2-premium") return "MCC v2";
   if (source === "mcc-legacy-premium") return "MCC legacy";
   if (source === "mcc-unavailable") return "MCC unavailable";
   if (source === "hyperliquid-direct") return "Hyperliquid";
   return source || "Local";
+}
+
+function formatCompactValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "n/a";
+  return Number.isInteger(number) ? String(number) : number.toFixed(1);
 }
 
 function formatUsd(value) {
@@ -1412,6 +1530,28 @@ function formatPercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "n/a";
   return `${number > 0 ? "+" : ""}${number.toFixed(2)}%`;
+}
+
+function formatWait(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "open";
+  if (number < 1) return "<1m";
+  return `${Math.round(number)}m`;
+}
+
+function formatUtcTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "n/a";
+  return date.toISOString().replace(/\.\d{3}Z$/, " UTC").replace("T", " ");
+}
+
+function outcomeClass(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("win")) return "is-win";
+  if (text.includes("loss")) return "is-loss";
+  if (text.includes("skip")) return "is-skip";
+  if (text.includes("open")) return "is-open";
+  return "";
 }
 
 function formatDate(value) {

@@ -85,7 +85,7 @@
         ]
       }
     </script>
-    <link rel="stylesheet" href="styles.css?v=trattoria1" />
+    <link rel="stylesheet" href="styles.css?v=recent1" />
   </head>
   <body class="is-locked">
     <section class="closed-gate" id="closedGate" aria-labelledby="closed-title" hidden>
@@ -264,6 +264,34 @@
         </div>
       </section>
 
+      <section class="recent-board" id="recentBoard" aria-labelledby="recent-title" hidden>
+        <div class="recent-board-head">
+          <div>
+            <p class="eyebrow">Fresh from the pass</p>
+            <h3 id="recent-title">Recent signals</h3>
+          </div>
+          <button class="quiet-action" id="recentNotifyButton" type="button">Turn on notifications</button>
+        </div>
+        <div class="recent-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Recent signal</th>
+                <th>Signal UTC</th>
+                <th>Decision</th>
+                <th>Score</th>
+                <th>Outcome</th>
+                <th>Setup</th>
+                <th>MFE</th>
+                <th>MAE</th>
+                <th>Wait</th>
+              </tr>
+            </thead>
+            <tbody id="recentSignalsList"></tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="missed-callout" id="missedCallout" hidden>
         <div>
           <p class="eyebrow">Missed plates</p>
@@ -306,14 +334,15 @@
         <p class="plating"></p>
         <p class="plate-age"></p>
         <div class="dish-grid">
-          <span>Setup <strong data-metric="setup"></strong></span>
-          <span>Entry <strong data-metric="entry"></strong></span>
-          <span>EV <strong data-metric="ev"></strong></span>
+          <span><small data-metric-label="setup">Setup</small> <strong data-metric="setup"></strong></span>
+          <span><small data-metric-label="entry">Entry</small> <strong data-metric="entry"></strong></span>
+          <span><small data-metric-label="ev">EV</small> <strong data-metric="ev"></strong></span>
+          <span><small data-metric-label="wait">Wait</small> <strong data-metric="wait"></strong></span>
         </div>
         <div class="confidence-track"><span></span></div>
       </article>
     </template>
 
-    <script type="module" src="app.js?v=trattoria1"></script>
+    <script type="module" src="app.js?v=recent1"></script>
   </body>
 </html>

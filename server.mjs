@@ -240,6 +240,10 @@ async function handleMenu(_request, response, url) {
       snapshotGeneratedAt: signalsFeed.freshness?.snapshotGeneratedAt,
     };
     const dishes = signalsFeed.signals.map((signal, index) => signalToDish(signal, index, timestampContext));
+    const recentSignals = dishes
+      .filter((dish) => dish.recentSignal)
+      .slice(0, 8)
+      .map((dish) => dish.recentSignal);
     await jsonResponse(response, {
       source: signalsFeed.source || "mcc",
       model: signalsFeed.model,
@@ -249,6 +253,7 @@ async function handleMenu(_request, response, url) {
       health,
       summary: menuSummary(dishes, signalsFeed.safety, operationMode),
       dishes,
+      recentSignals,
       rawSignalCount: signalsFeed.rawSignalCount,
       premiumFilter: signalsFeed.premiumFilter,
       safety: signalsFeed.safety || [],
@@ -289,7 +294,10 @@ async function fetchMccSignalsV2({ limit, minSetupScore, operationMode, side, ap
   endpoint.searchParams.set("includeWatch", "true");
   if (side) endpoint.searchParams.set("side", side);
 
-  const response = await fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 25000);
+  const [response, recentSignals] = await Promise.all([
+    fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 25000),
+    fetchMccRecentSignals({ limit: Math.max(limit, 8), side, apiBase }),
+  ]);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`MCC ${response.status} ${response.statusText}`);
 
@@ -300,21 +308,51 @@ async function fetchMccSignalsV2({ limit, minSetupScore, operationMode, side, ap
     .filter((signal) => waveRider ? isWaveRiderSignal(signal, minSetupScore) : isPremiumSignal(signal, minSetupScore, operationMode))
     .sort(premiumSignalSort)
     .slice(0, limit);
+  const signals = mergeRecentAndPremiumSignals(recentSignals, premiumSignals, limit);
   return {
     ...payload,
-    source: "mcc-v2-premium",
-    mode: waveRider ? "wave-rider" : "premium",
+    source: recentSignals.length ? "mcc-v2-recent" : "mcc-v2-premium",
+    mode: waveRider ? "wave-rider" : "recent",
     operationMode: waveRider ? "wave-rider" : payload.operationMode || operationMode,
-    rawSignalCount: payload.signals.length,
-    signals: premiumSignals,
+    rawSignalCount: payload.signals.length + recentSignals.length,
+    signals,
     premiumFilter: premiumFilterSummary(operationMode, minSetupScore),
     safety: [
       waveRider
         ? "Wave Rider is fast food for short-duration waves: quick reads, strict invalidation, no reheats."
-        : "Rektaurant serves only active MCC v2 premium plates: no AVOID, no resolved signals, no stale bot feed.",
+        : "Rektaurant serves the MCC recent signal board first, including early alerts, outcomes, MFE/MAE and wait time, then active premium plates.",
       ...(payload.safety || []),
     ],
   };
+}
+
+async function fetchMccRecentSignals({ limit, side, apiBase }) {
+  try {
+    const endpoint = new URL(`${apiBase}/api/hyperliquid/intelligence`);
+    const response = await fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 25000);
+    if (!response.ok) return [];
+    const payload = await response.json();
+    const records = Array.isArray(payload.recentSignals) ? payload.recentSignals : [];
+    return records
+      .map(normalizeMccRecentSignal)
+      .filter((signal) => signal.symbol && (!side || normalizeSignalSide(signal.side) === side))
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+function mergeRecentAndPremiumSignals(recentSignals, premiumSignals, limit) {
+  const seen = new Set();
+  const merged = [];
+  for (const signal of [...recentSignals, ...premiumSignals]) {
+    const key = signal.id || `${signal.symbol}-${signal.side}-${signal.generatedAt || signal.servedAt || merged.length}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(signal);
+    if (merged.length >= limit) break;
+  }
+  return merged;
 }
 
 async function fetchMccSignalsLegacy({ limit, minSetupScore, operationMode, side, apiBase }) {
@@ -407,6 +445,7 @@ async function upstreamHealth(apiBase = config.mccApiBase) {
 
 function signalToDish(signal, index, context = {}) {
   const operationMode = typeof context === "string" ? context : context.operationMode || "opportunistic";
+  const recentSignal = signal.recentSignal || null;
   const entry = numberOrNull(signal.entryTriggerUsd ?? signal.bestReferenceEntryUsd);
   const target = numberOrNull(signal.targetUsd);
   const invalidation = numberOrNull(signal.invalidationUsd);
@@ -415,7 +454,7 @@ function signalToDish(signal, index, context = {}) {
   const entryScore = round(numberOrNull(signal.entryScore) ?? 0, 0);
   const timing = round(numberOrNull(signal.timingScore) ?? 0, 0);
   const alpha = round(numberOrNull(signal.alphaScore) ?? 0, 0);
-  const missed = isMissedSignal(signal);
+  const missed = recentSignal ? recentSignal.outcome !== "open" : isMissedSignal(signal);
   const servedAt = signalTimestamp(signal) || context.snapshotGeneratedAt || context.feedGeneratedAt || new Date().toISOString();
 
   return {
@@ -423,8 +462,8 @@ function signalToDish(signal, index, context = {}) {
     coin: signal.symbol,
     side: normalizeSignalSide(signal.side),
     dishName: dishName(signal.symbol, normalizeSignalSide(signal.side), index),
-    course: missed ? "Missed plate" : operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
-    chefCall: missed ? "Too late for service" : operationMode === "wave-rider" ? "Quick bite, strict stop" : chefCall(signal.recommendation, signal.quantAction),
+    course: recentSignal ? (missed ? "Recent missed plate" : "Recent live plate") : missed ? "Missed plate" : operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
+    chefCall: recentSignal ? `${recentSignal.decision} · ${recentSignal.outcome}` : missed ? "Too late for service" : operationMode === "wave-rider" ? "Quick bite, strict stop" : chefCall(signal.recommendation, signal.quantAction),
     recommendation: signal.recommendation,
     decision: signal.decision,
     lifecycle: signal.lifecycleState,
@@ -447,7 +486,8 @@ function signalToDish(signal, index, context = {}) {
     memory: signal.memory || null,
     probabilities: signal.probabilities || null,
     spreadBps: numberOrNull(signal.spreadBps),
-    plating: missed ? "Past expired signal missed. Enable notifications to catch the next hot plate as it leaves the kitchen." : operationMode === "wave-rider" ? "Hot plate, quick bite, strict invalidation" : platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
+    recentSignal,
+    plating: recentSignal ? recentPlating(signal, recentSignal) : missed ? "Past expired signal missed. Enable notifications to catch the next hot plate as it leaves the kitchen." : operationMode === "wave-rider" ? "Hot plate, quick bite, strict invalidation" : platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
     reasons: Array.isArray(signal.reasons) ? signal.reasons.slice(0, 4) : Array.isArray(signal.why) ? signal.why.slice(0, 4) : [],
     warnings: Array.isArray(signal.warnings) ? signal.warnings.slice(0, 4) : [],
   };
@@ -1199,6 +1239,93 @@ function normalizeMccSignalV2(signal) {
   };
 }
 
+function normalizeMccRecentSignal(signal) {
+  const outcome = normalizeOutcomeLabel(signal?.outcome);
+  const setupOutcome = normalizeOutcomeLabel(signal?.setupOutcome);
+  const decision = String(signal?.entryDecisionAction || signal?.decision || "").toUpperCase();
+  const side = normalizeSignalSide(signal?.side);
+  const score = round(numberOrNull(signal?.entryDecisionScore ?? signal?.score) ?? 0, 0);
+  const waitMinutes = numberOrNull(signal?.actualWaitMinutes ?? signal?.setupActualWaitMinutes);
+  const maxFavorablePct = numberOrNull(signal?.maxFavorablePct);
+  const maxAdversePct = numberOrNull(signal?.maxAdversePct);
+  const signalUtc = toIsoTimestamp(signal?.generatedAt) || signalTimestamp(signal) || new Date().toISOString();
+  const recentSignal = {
+    id: signal?.id || `${signal?.symbol || "signal"}-${signalUtc}`,
+    coin: signal?.symbol,
+    side,
+    signalUtc,
+    decision: decision.replaceAll("_", " ").toLowerCase() || "recent signal",
+    score,
+    outcome: outcome.toLowerCase(),
+    setup: setupOutcome.toLowerCase().replaceAll("_", " "),
+    mfePct: round(maxFavorablePct ?? 0, 2),
+    maePct: round(maxAdversePct ?? 0, 2),
+    waitMinutes,
+  };
+
+  const opportunity = signal?.opportunitySnapshot || {};
+  const pro = opportunity?.pro || {};
+  const entryDecision = pro?.entryDecision || {};
+  const reasons = [
+    `Recent signal ${recentSignal.decision} served at ${new Date(signalUtc).toISOString().replace(".000", "")}.`,
+    `Outcome ${recentSignal.outcome}, setup ${recentSignal.setup}, MFE ${round(maxFavorablePct ?? 0, 2)}%, MAE ${round(maxAdversePct ?? 0, 2)}%.`,
+    waitMinutes === null ? "Wait is still open." : `Resolved after ${waitMinutes}m.`,
+    entryDecision.reason || opportunity.thesis,
+  ].filter(Boolean);
+
+  return {
+    id: `recent-${recentSignal.id}`,
+    symbol: signal?.symbol,
+    side,
+    recommendation: decision || "RECENT_SIGNAL",
+    decision,
+    lifecycleState: outcome === "OPEN" ? "OPEN" : "RESOLVED",
+    servedAt: signalUtc,
+    generatedAt: signalUtc,
+    lastObservedAt: signal?.lastObservedAt,
+    setupScore: score,
+    entryScore: score,
+    timingScore: numberOrNull(signal?.multiTimeframeScore) ?? score,
+    alphaScore: numberOrNull(signal?.score) ?? score,
+    confidence: round((numberOrNull(signal?.confidence) ?? 0) * 100, 1),
+    expectedValuePct: maxFavorablePct,
+    entryTriggerUsd: signal?.suggestedEntryPriceUsd,
+    bestReferenceEntryUsd: signal?.observedEntryPriceUsd ?? signal?.currentPriceUsd,
+    targetUsd: signal?.targetPriceUsd,
+    invalidationUsd: signal?.invalidationPriceUsd,
+    riskRewardRatio: signal?.riskRewardRatio,
+    expectedWaitMinutes: waitMinutes,
+    suggestedSizingPct: 0,
+    allowedForPaper: false,
+    allowedForExecutionLayer: false,
+    qualityGrade: signal?.qualityGrade,
+    probabilities: {
+      confidence: round((numberOrNull(signal?.confidence) ?? 0) * 100, 1),
+      success: round((numberOrNull(signal?.successProbability) ?? 0) * 100, 1),
+      targetBeforeInvalidation: round((numberOrNull(signal?.targetBeforeInvalidationProbability) ?? 0) * 100, 1),
+      painBeforeProfit: round((numberOrNull(signal?.painBeforeProfitProbability) ?? 0) * 100, 1),
+    },
+    memory: opportunity?.pro?.learning || null,
+    quantAction: pro?.quantDecision?.action,
+    reasons,
+    warnings: [
+      ...(Array.isArray(entryDecision.warnings) ? entryDecision.warnings.slice(0, 2) : []),
+      ...(Array.isArray(signal?.opportunitySnapshot?.warnings) ? signal.opportunitySnapshot.warnings.slice(0, 2) : []),
+      "Recent board is research and post-signal tracking, not automatic execution.",
+    ],
+    recentSignal,
+  };
+}
+
+function normalizeOutcomeLabel(value) {
+  const normalized = String(value || "OPEN").toUpperCase().replaceAll(" ", "_");
+  if (normalized.includes("WIN")) return "WIN";
+  if (normalized.includes("LOSS")) return "LOSS";
+  if (normalized.includes("SKIP")) return "SKIPPED";
+  if (normalized.includes("EXPIRED")) return "EXPIRED";
+  return "OPEN";
+}
+
 function isPremiumSignal(signal, minSetupScore = 0, operationMode = "opportunistic") {
   const decision = String(signal.decision || "").toUpperCase();
   const lifecycle = String(signal.lifecycleState || signal.lifecycle || "").toUpperCase();
@@ -1437,4 +1564,11 @@ function platingFor(recommendation, side) {
   if (recommendation === "WAIT_PULLBACK") return "Let price revisit the prep station";
   if (recommendation === "WAIT_BREAKOUT") return "Needs a clean break before service";
   return "Research portion, no execution garnish";
+}
+
+function recentPlating(signal, recentSignal) {
+  const side = normalizeSignalSide(signal.side);
+  const wait = recentSignal.waitMinutes === null ? "wait still open" : `${recentSignal.waitMinutes}m wait`;
+  const outcome = recentSignal.outcome === "open" ? "still on the pass" : `${recentSignal.outcome} outcome`;
+  return `Recent ${side} signal: ${recentSignal.decision}, score ${recentSignal.score}, ${outcome}, MFE ${recentSignal.mfePct}%, MAE ${recentSignal.maePct}%, ${wait}.`;
 }
