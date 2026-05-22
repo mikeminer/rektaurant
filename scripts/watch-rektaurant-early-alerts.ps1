@@ -7,6 +7,7 @@ param(
   [string]$Mode = "opportunistic",
   [int]$MinSetupScore = 24,
   [int]$Limit = 14,
+  [int]$MaxRecentAgeSeconds = 300,
   [string]$StatePath,
   [switch]$DryRun,
   [switch]$RunOnce
@@ -130,6 +131,40 @@ function Format-Percent($value) {
   return "n/a"
 }
 
+function Get-SignalAgeSeconds($signal) {
+  $signalUtc = ("" + $signal.signalUtc).Trim()
+  if (-not $signalUtc) {
+    return $null
+  }
+
+  try {
+    $styles = [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal
+    $parsed = [DateTimeOffset]::Parse($signalUtc, [System.Globalization.CultureInfo]::InvariantCulture, $styles)
+    return [Math]::Max(0, [Math]::Round(([DateTimeOffset]::UtcNow - $parsed.ToUniversalTime()).TotalSeconds))
+  } catch {
+    return $null
+  }
+}
+
+function Format-Age($seconds) {
+  if ($null -eq $seconds) {
+    return "fresh"
+  }
+
+  $value = [int][Math]::Max(0, [Math]::Round([double]$seconds))
+  if ($value -lt 60) {
+    return "${value}s"
+  }
+
+  $minutes = [Math]::Floor($value / 60)
+  if ($minutes -lt 60) {
+    return "${minutes}m"
+  }
+
+  $hours = [Math]::Floor($minutes / 60)
+  return "${hours}h"
+}
+
 function Recent-Fingerprint($signal) {
   if ($signal.id) {
     return "$($signal.id)-$($signal.signalUtc)"
@@ -166,7 +201,10 @@ function Select-HotRecentSignal($menu, $state) {
   $sent = @($state.sent)
   $signals = @($menu.recentSignals | Where-Object {
     $decision = Normalize-Decision $_.decision
-    $decision -eq "early alert"
+    $ageSeconds = Get-SignalAgeSeconds $_
+    $decision -eq "early alert" -and
+      $null -ne $ageSeconds -and
+      $ageSeconds -le $MaxRecentAgeSeconds
   })
 
   if ($signals.Count -eq 0) {
@@ -179,6 +217,7 @@ function Select-HotRecentSignal($menu, $state) {
       return [pscustomobject]@{
         signal = $signal
         fingerprint = $fingerprint
+        ageSeconds = Get-SignalAgeSeconds $signal
       }
     }
   }
@@ -187,7 +226,7 @@ function Select-HotRecentSignal($menu, $state) {
 }
 
 function Select-HotDish($menu) {
-  $dishes = @($menu.dishes | Where-Object { -not (Is-MissedDish $_) })
+  $dishes = @($menu.dishes | Where-Object { -not $_.recentSignal -and -not (Is-MissedDish $_) })
   if ($dishes.Count -eq 0) {
     return $null
   }
@@ -213,9 +252,10 @@ function Send-RecentNotification($signal, $fingerprint, $menu) {
   $mfe = Format-Percent $signal.mfePct
   $mae = Format-Percent $signal.maePct
   $wait = Format-Wait $signal.waitMinutes
+  $age = Format-Age (Get-SignalAgeSeconds $signal)
 
   $title = Trim-Text "Hot plate: $symbol $side" 32
-  $body = Trim-Text "$decision. Score $score, outcome $outcome, MFE $mfe, MAE $mae, wait $wait. Served fresh." 128
+  $body = Trim-Text "$decision. Score $score, outcome $outcome, MFE $mfe, MAE $mae, wait $wait. Served $age ago." 128
   $notificationId = Trim-Text "rektaurant-recent-$fingerprint" 128
   $targetUrl = "$BaseUrl/?r=auto-recent&mode=$([uri]::EscapeDataString($menu.operationMode))&coin=$([uri]::EscapeDataString($symbol))"
 
@@ -302,6 +342,7 @@ Write-Host "Menu:    $MenuUrl"
 Write-Host "Push:    $BaseUrl/api/notifications/send"
 Write-Host "State:   $StatePath"
 Write-Host "Every:   $IntervalSeconds seconds"
+Write-Host "Fresh:   recent early alerts <= $MaxRecentAgeSeconds seconds"
 if ($DryRun) { Write-Host "Mode:    dry run, no push will be sent" }
 if ($RunOnce) { Write-Host "Mode:    single check" }
 Write-Host ""
@@ -317,7 +358,8 @@ while ($true) {
     if ($recentMatch) {
       $signal = $recentMatch.signal
       $fingerprint = $recentMatch.fingerprint
-      Write-Host "[$now] Recent early alert found: $($signal.coin) $($signal.side) score=$($signal.score) outcome=$($signal.outcome). Sending push..."
+      $age = Format-Age $recentMatch.ageSeconds
+      Write-Host "[$now] Fresh recent early alert found: $($signal.coin) $($signal.side) score=$($signal.score) outcome=$($signal.outcome), served $age ago. Sending push..."
       $result = Send-RecentNotification $signal $fingerprint $menu
       $result | ConvertTo-Json -Depth 8
 

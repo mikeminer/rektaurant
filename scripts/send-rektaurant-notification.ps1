@@ -34,10 +34,26 @@ if (-not $Type) {
   Write-Host ""
   $choice = Read-Host "Select option"
   switch ($choice.Trim()) {
-    "1" { $Type = "open" }
-    "2" { $Type = "closed" }
-    "3" { $Type = "closing" }
-    "4" { $Type = "happy-hour" }
+    "1" {
+      $Type = "open"
+      $Title = "New menu live"
+      $Body = "Hot perp specials are on the pass. Longs, shorts, and risk notes served fresh."
+    }
+    "2" {
+      $Type = "closed"
+      $Title = "Service paused"
+      $Body = "The pass is cooling down. Fresh long and short dishes return when the kitchen reopens."
+    }
+    "3" {
+      $Type = "closing"
+      $Title = "Final plates"
+      $Body = "Last signals are leaving the kitchen. Check the menu before the lights go off."
+    }
+    "4" {
+      $Type = "happy-hour"
+      $Title = "Chef's happy hour"
+      $Body = "Fresh Hyperliquid setups on the counter. Come pick a hot plate."
+    }
     "5" { $Type = "preview" }
     "6" {
       $Type = "open"
