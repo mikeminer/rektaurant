@@ -1,8 +1,12 @@
 param(
-  [string]$SignalsUrl = "http://127.0.0.1:3000/api/v1/bot/hyperliquid/signals?limit=12&includeWatch=true&operationMode=opportunistic",
   [string]$BaseUrl = "https://rektaurant.vercel.app",
+  [string]$MenuUrl,
   [string]$Secret,
   [int]$IntervalSeconds = 180,
+  [ValidateSet("opportunistic", "balanced", "strict", "wave-rider")]
+  [string]$Mode = "opportunistic",
+  [int]$MinSetupScore = 24,
+  [int]$Limit = 14,
   [string]$StatePath,
   [switch]$DryRun,
   [switch]$RunOnce
@@ -15,14 +19,25 @@ if (-not $StatePath) {
   $StatePath = Join-Path $projectRoot ".rektaurant-early-alert-state.json"
 }
 
-if (-not $Secret) {
+function Normalize-BaseUrl($value) {
+  return ("" + $value).Trim().TrimEnd("/")
+}
+
+$BaseUrl = Normalize-BaseUrl $BaseUrl
+
+if (-not $MenuUrl) {
+  $operationMode = if ($Mode -eq "wave-rider") { "wave-rider" } else { $Mode }
+  $MenuUrl = "$BaseUrl/api/menu?limit=$Limit&minSetupScore=$MinSetupScore&operationMode=$operationMode"
+}
+
+if (-not $DryRun -and -not $Secret) {
   $localSecretPath = Join-Path $projectRoot ".rektaurant-notify-secret"
   if (Test-Path $localSecretPath) {
     $Secret = (Get-Content -Raw $localSecretPath).Trim()
   }
 }
 
-if (-not $Secret) {
+if (-not $DryRun -and -not $Secret) {
   $Secret = Read-Host "REKTAURANT_NOTIFY_SECRET"
 }
 
@@ -55,8 +70,12 @@ function Save-State($state) {
     Set-Content -Path $StatePath -Encoding UTF8
 }
 
-function Normalize-Decision($value) {
-  return ("" + $value).Trim().Replace(" ", "_").Replace("-", "_").ToUpperInvariant()
+function Trim-Text($text, $maxLength) {
+  $value = "" + $text
+  if ($value.Length -le $maxLength) {
+    return $value
+  }
+  return $value.Substring(0, $maxLength)
 }
 
 function Short-Number($value, $digits) {
@@ -69,45 +88,62 @@ function Short-Number($value, $digits) {
   return "n/a"
 }
 
-function Signal-Fingerprint($signal) {
-  if ($signal.id) {
-    return ("" + $signal.id)
+function Is-MissedDish($dish) {
+  $course = ("" + $dish.course).ToUpperInvariant()
+  $lifecycle = ("" + $dish.lifecycle).ToUpperInvariant()
+  $recommendation = ("" + $dish.recommendation).ToUpperInvariant()
+  return $course -eq "MISSED PLATE" -or
+    $recommendation -eq "REVIEW_RESOLVED" -or
+    @("RESOLVED", "EXPIRED", "CANCELLED", "CANCELED") -contains $lifecycle
+}
+
+function Dish-Fingerprint($dish) {
+  if ($dish.id) {
+    return "$($dish.id)-$($dish.servedAt)"
   }
 
   $parts = @(
-    $signal.symbol,
-    $signal.side,
-    $signal.decision,
-    $signal.entryTriggerUsd,
-    $signal.targetUsd,
-    $signal.invalidationUsd
+    $dish.coin,
+    $dish.side,
+    $dish.decision,
+    $dish.entryUsd,
+    $dish.targetUsd,
+    $dish.invalidationUsd,
+    $dish.servedAt
   )
   return ($parts -join "|")
 }
 
-function Trim-Text($text, $maxLength) {
-  $value = "" + $text
-  if ($value.Length -le $maxLength) {
-    return $value
+function Select-HotDish($menu) {
+  $dishes = @($menu.dishes | Where-Object { -not (Is-MissedDish $_) })
+  if ($dishes.Count -eq 0) {
+    return $null
   }
-  return $value.Substring(0, $maxLength)
+
+  return @($dishes | Sort-Object `
+    @{ Expression = { if ($_.decision -eq "ENTER_NOW") { 0 } elseif ($_.decision -eq "PAPER_ONLY") { 1 } elseif ($_.decision -eq "WATCH_SETUP") { 2 } else { 3 } } }, `
+    @{ Expression = { -1 * [double]($_.scores.setup) } }, `
+    @{ Expression = { -1 * [double]($_.scores.timing) } } |
+    Select-Object -First 1)[0]
 }
 
-function Send-EarlyAlertNotification($signal, $fingerprint) {
-  $symbol = ("" + $signal.symbol).Trim().ToUpperInvariant()
+function Send-DishNotification($dish, $fingerprint, $menu) {
+  $symbol = ("" + $dish.coin).Trim().ToUpperInvariant()
   if (-not $symbol) { $symbol = "COIN" }
 
-  $side = ("" + $signal.side).Trim().ToUpperInvariant()
+  $side = ("" + $dish.side).Trim().ToUpperInvariant()
   if (-not $side) { $side = "SETUP" }
 
-  $setup = Short-Number $signal.setupScore 0
-  $confidence = Short-Number $signal.confidence 0
-  $wait = Short-Number $signal.expectedWaitMinutes 0
+  $decision = ("" + $dish.decision).Trim().Replace("_", " ").ToUpperInvariant()
+  $setup = Short-Number $dish.scores.setup 0
+  $ev = Short-Number $dish.expectedValuePct 2
+  $rr = if ($null -ne $dish.riskRewardRatio) { "$(Short-Number $dish.riskRewardRatio 2)x" } else { "n/a" }
+  $prefix = if ($menu.operationMode -eq "wave-rider") { "Wave Rider" } else { "Executive plate" }
 
-  $title = Trim-Text "Early alert $symbol $side" 32
-  $body = Trim-Text "$symbol $side early alert: setup $setup, confidence $confidence%, wait ~$wait min. Hot plate on Rektaurant." 128
-  $notificationId = Trim-Text "early-alert-$fingerprint" 128
-  $targetUrl = "$BaseUrl/?r=early-alert&coin=$([uri]::EscapeDataString($symbol))"
+  $title = Trim-Text "${prefix}: $symbol $side" 32
+  $body = Trim-Text "$decision served hot. Setup $setup, EV $ev%, R/R $rr. Strict invalidation on Rektaurant." 128
+  $notificationId = Trim-Text "rektaurant-$($menu.operationMode)-$fingerprint" 128
+  $targetUrl = "$BaseUrl/?r=auto-premium&mode=$([uri]::EscapeDataString($menu.operationMode))&coin=$([uri]::EscapeDataString($symbol))"
 
   $payloadObject = @{
     type = "open"
@@ -125,6 +161,8 @@ function Send-EarlyAlertNotification($signal, $fingerprint) {
       body = $body
       notificationId = $notificationId
       targetUrl = $targetUrl
+      source = $menu.source
+      rawSignalCount = $menu.rawSignalCount
     }
   }
 
@@ -137,8 +175,8 @@ function Send-EarlyAlertNotification($signal, $fingerprint) {
   return Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/notifications/send" -Headers $headers -Body $payload -TimeoutSec 30
 }
 
-Write-Host "Rektaurant EARLY_ALERT watcher"
-Write-Host "Signals: $SignalsUrl"
+Write-Host "Rektaurant premium auto-notification watcher"
+Write-Host "Menu:    $MenuUrl"
 Write-Host "Push:    $BaseUrl/api/notifications/send"
 Write-Host "State:   $StatePath"
 Write-Host "Every:   $IntervalSeconds seconds"
@@ -149,23 +187,22 @@ Write-Host ""
 while ($true) {
   $now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
   try {
-    $feed = Invoke-RestMethod -Method Get -Uri $SignalsUrl -Headers @{ accept = "application/json" } -TimeoutSec 45
-    $signals = @($feed.signals)
-    $earlyAlerts = @($signals | Where-Object { (Normalize-Decision $_.decision) -eq "EARLY_ALERT" })
+    $menu = Invoke-RestMethod -Method Get -Uri $MenuUrl -Headers @{ accept = "application/json" } -TimeoutSec 45
+    $dish = Select-HotDish $menu
 
-    if ($earlyAlerts.Count -eq 0) {
-      Write-Host "[$now] No EARLY_ALERT recent signal."
+    if (-not $dish) {
+      $rawCount = if ($null -ne $menu.rawSignalCount) { $menu.rawSignalCount } else { "n/a" }
+      Write-Host "[$now] No Rektaurant premium dish. Source=$($menu.source), raw=$rawCount, served=$(@($menu.dishes).Count)."
     } else {
-      $signal = $earlyAlerts[0]
-      $fingerprint = Signal-Fingerprint $signal
+      $fingerprint = Dish-Fingerprint $dish
       $state = Get-State
       $alreadySent = @($state.sent) -contains $fingerprint
 
       if ($alreadySent) {
-        Write-Host "[$now] Already notified EARLY_ALERT $($signal.symbol) $($signal.side) ($fingerprint)."
+        Write-Host "[$now] Already notified $($dish.coin) $($dish.side) ($fingerprint)."
       } else {
-        Write-Host "[$now] EARLY_ALERT found: $($signal.symbol) $($signal.side) ($fingerprint). Sending push..."
-        $result = Send-EarlyAlertNotification $signal $fingerprint
+        Write-Host "[$now] Rektaurant premium dish found: $($dish.coin) $($dish.side) $($dish.decision). Sending push..."
+        $result = Send-DishNotification $dish $fingerprint $menu
         $result | ConvertTo-Json -Depth 8
 
         if ($result.ok -and -not $DryRun) {
