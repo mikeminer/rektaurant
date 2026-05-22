@@ -4,6 +4,7 @@ const state = {
   minSetupScore: 24,
   dishes: [],
   selectedId: null,
+  lastMenu: null,
   sdk: null,
   farcasterContext: null,
   isMiniApp: false,
@@ -859,13 +860,14 @@ async function loadMenu({ force = false } = {}) {
     const response = await fetch(`${apiBase}/api/menu?${params.toString()}`, { headers: { accept: "application/json" } });
     if (!response.ok) throw new Error(`Menu API ${response.status}`);
     const menu = await response.json();
+    state.lastMenu = menu;
     state.dishes = Array.isArray(menu.dishes) ? menu.dishes : [];
     state.selectedId = state.dishes[0]?.id || null;
     renderSummary(menu);
     renderMenu();
     renderTicket(selectedDish());
     els.updatedAt.textContent = `Served ${formatDate(menu.generatedAt)} from ${sourceLabel(menu.source)}`;
-    els.serviceStatus.textContent = menu.upstreamError ? "Rektaurant fallback kitchen" : menu.summary?.title || "Menu served";
+    els.serviceStatus.textContent = menu.upstreamError ? "Premium feed paused" : menu.summary?.title || "Menu served";
   } catch (error) {
     els.serviceStatus.textContent = "Kitchen delay";
     els.menuList.innerHTML = `<div class="empty-state"><h3>Service paused</h3><p>${escapeHtml(String(error.message || error))}</p></div>`;
@@ -893,11 +895,11 @@ function renderMenu() {
     const empty = state.mode === "wave-rider"
       ? {
           title: "No Wave Rider bites right now",
-          body: "Fast food stays off the pass when the wave is cold. Check back soon or lower the minimum setup score.",
+          body: "Fast food stays off the pass when the wave is cold. Turn on notifications so the next hot bite reaches you fresh.",
         }
       : {
-          title: "No plates match the pass",
-          body: "Try all sides or lower the minimum setup score.",
+          title: "No executive plates right now",
+          body: "The premium MCC v2 feed has no fresh active plate that passes EV, risk/reward, memory and stale-signal filters. Turn on notifications to catch the next one hot.",
         };
     els.menuList.innerHTML = `<div class="empty-state"><h3>${empty.title}</h3><p>${empty.body}</p></div>`;
     return;
@@ -1391,6 +1393,9 @@ function formatDurationAgo(seconds) {
 
 function sourceLabel(source) {
   if (source === "mcc") return "MCC";
+  if (source === "mcc-v2-premium") return "MCC v2";
+  if (source === "mcc-legacy-premium") return "MCC legacy";
+  if (source === "mcc-unavailable") return "MCC unavailable";
   if (source === "hyperliquid-direct") return "Hyperliquid";
   return source || "Local";
 }

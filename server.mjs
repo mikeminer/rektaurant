@@ -240,33 +240,87 @@ async function handleMenu(_request, response, url) {
       snapshotGeneratedAt: signalsFeed.freshness?.snapshotGeneratedAt,
     };
     const dishes = signalsFeed.signals.map((signal, index) => signalToDish(signal, index, timestampContext));
-    if (dishes.length > 0 || operationMode === "wave-rider") {
-      await jsonResponse(response, {
-        source: "mcc",
-        model: signalsFeed.model,
-        generatedAt: signalsFeed.generatedAt,
-        operationMode: signalsFeed.operationMode,
-        ...(config.allowClientApiOverride ? { apiBase } : {}),
-        health,
-        summary: menuSummary(dishes, signalsFeed.safety, operationMode),
-        dishes,
-        safety: signalsFeed.safety || [],
-      });
-      return;
-    }
-
-    const fallback = await fetchHyperliquidFallback({ limit, side });
-    await jsonResponse(response, fallback);
+    await jsonResponse(response, {
+      source: signalsFeed.source || "mcc",
+      model: signalsFeed.model,
+      generatedAt: signalsFeed.generatedAt,
+      operationMode: signalsFeed.operationMode,
+      ...(config.allowClientApiOverride ? { apiBase } : {}),
+      health,
+      summary: menuSummary(dishes, signalsFeed.safety, operationMode),
+      dishes,
+      rawSignalCount: signalsFeed.rawSignalCount,
+      premiumFilter: signalsFeed.premiumFilter,
+      safety: signalsFeed.safety || [],
+    });
   } catch (error) {
-    const fallback = await fetchHyperliquidFallback({ limit, side, upstreamError: String(error?.message || error) });
-    await jsonResponse(response, fallback);
+    const message = String(error?.message || error);
+    await jsonResponse(response, {
+      source: "mcc-unavailable",
+      model: "rektaurant-premium-feed-v1",
+      generatedAt: new Date().toISOString(),
+      operationMode,
+      ...(config.allowClientApiOverride ? { apiBase } : {}),
+      upstreamError: message,
+      summary: menuSummary([], [
+        "Premium MCC feed is unavailable. Rektaurant does not serve fallback plates as paid signals.",
+      ], operationMode),
+      dishes: [],
+      safety: [
+        "Premium feed unavailable: no fallback market reads are served to paid users.",
+        "Rektaurant is read-only and never sends orders, signatures or approvals.",
+      ],
+    });
   }
 }
 
 async function fetchMccSignals({ limit, minSetupScore, operationMode, side, apiBase }) {
+  const v2 = await fetchMccSignalsV2({ limit, minSetupScore, operationMode, side, apiBase });
+  if (v2) return v2;
+  return fetchMccSignalsLegacy({ limit, minSetupScore, operationMode, side, apiBase });
+}
+
+async function fetchMccSignalsV2({ limit, minSetupScore, operationMode, side, apiBase }) {
+  const waveRider = operationMode === "wave-rider";
+  const endpoint = new URL(`${apiBase}/api/v1/signals/latest`);
+  endpoint.searchParams.set("limit", String(Math.max(limit, waveRider ? 80 : 100)));
+  endpoint.searchParams.set("minSetupScore", String(waveRider ? Math.min(minSetupScore, 20) : minSetupScore));
+  endpoint.searchParams.set("operationMode", waveRider ? "opportunistic" : operationMode);
+  endpoint.searchParams.set("includeWatch", "true");
+  if (side) endpoint.searchParams.set("side", side);
+
+  const response = await fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 25000);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`MCC ${response.status} ${response.statusText}`);
+
+  const payload = await response.json();
+  if (!Array.isArray(payload.signals)) throw new Error("MCC response did not include signals");
+  const normalized = payload.signals.map(normalizeMccSignalV2);
+  const premiumSignals = normalized
+    .filter((signal) => waveRider ? isWaveRiderSignal(signal, minSetupScore) : isPremiumSignal(signal, minSetupScore, operationMode))
+    .sort(premiumSignalSort)
+    .slice(0, limit);
+  return {
+    ...payload,
+    source: "mcc-v2-premium",
+    mode: waveRider ? "wave-rider" : "premium",
+    operationMode: waveRider ? "wave-rider" : payload.operationMode || operationMode,
+    rawSignalCount: payload.signals.length,
+    signals: premiumSignals,
+    premiumFilter: premiumFilterSummary(operationMode, minSetupScore),
+    safety: [
+      waveRider
+        ? "Wave Rider is fast food for short-duration waves: quick reads, strict invalidation, no reheats."
+        : "Rektaurant serves only active MCC v2 premium plates: no AVOID, no resolved signals, no stale bot feed.",
+      ...(payload.safety || []),
+    ],
+  };
+}
+
+async function fetchMccSignalsLegacy({ limit, minSetupScore, operationMode, side, apiBase }) {
   const waveRider = operationMode === "wave-rider";
   const endpoint = new URL(`${apiBase}/api/v1/bot/hyperliquid/signals`);
-  endpoint.searchParams.set("limit", String(waveRider ? Math.max(limit, 30) : limit));
+  endpoint.searchParams.set("limit", String(Math.max(limit, waveRider ? 30 : 60)));
   endpoint.searchParams.set("minSetupScore", String(waveRider ? Math.min(minSetupScore, 20) : minSetupScore));
   endpoint.searchParams.set("operationMode", waveRider ? "opportunistic" : operationMode);
   endpoint.searchParams.set("includeWatch", "true");
@@ -277,14 +331,19 @@ async function fetchMccSignals({ limit, minSetupScore, operationMode, side, apiB
 
   const payload = await response.json();
   if (!Array.isArray(payload.signals)) throw new Error("MCC response did not include signals");
-  if (!waveRider) return payload;
+  const premiumSignals = payload.signals
+    .filter((signal) => waveRider ? isWaveRiderSignal(signal, minSetupScore) : isPremiumSignal(signal, minSetupScore, operationMode))
+    .sort(premiumSignalSort)
+    .slice(0, limit);
   return {
     ...payload,
-    mode: "wave-rider",
-    operationMode: "wave-rider",
-    signals: payload.signals.filter((signal) => isWaveRiderSignal(signal, minSetupScore)).sort(waveRiderSort).slice(0, limit),
+    source: "mcc-legacy-premium",
+    operationMode: waveRider ? "wave-rider" : payload.operationMode || operationMode,
+    rawSignalCount: payload.signals.length,
+    signals: premiumSignals,
+    premiumFilter: premiumFilterSummary(operationMode, minSetupScore),
     safety: [
-      "Wave Rider is fast food for short-duration waves: quick reads, strict invalidation, no reheats.",
+      "Legacy MCC feed filtered as premium: no AVOID, no resolved signals, no stale plates.",
       ...(payload.safety || []),
     ],
   };
@@ -383,9 +442,13 @@ function signalToDish(signal, index, context = {}) {
     allowedForPaper: Boolean(signal.allowedForPaper),
     allowedForExecutionLayer: Boolean(signal.allowedForExecutionLayer),
     scores: { setup, entry: entryScore, timing, alpha },
-    volumeUsd24h: 0,
+    volumeUsd24h: numberOrNull(signal.volumeUsd24h) ?? 0,
+    qualityGrade: signal.qualityGrade || null,
+    memory: signal.memory || null,
+    probabilities: signal.probabilities || null,
+    spreadBps: numberOrNull(signal.spreadBps),
     plating: missed ? "Past expired signal missed. Enable notifications to catch the next hot plate as it leaves the kitchen." : operationMode === "wave-rider" ? "Hot plate, quick bite, strict invalidation" : platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
-    reasons: Array.isArray(signal.why) ? signal.why.slice(0, 4) : [],
+    reasons: Array.isArray(signal.reasons) ? signal.reasons.slice(0, 4) : Array.isArray(signal.why) ? signal.why.slice(0, 4) : [],
     warnings: Array.isArray(signal.warnings) ? signal.warnings.slice(0, 4) : [],
   };
 }
@@ -467,7 +530,7 @@ function menuSummary(dishes, safety, operationMode = "opportunistic") {
     };
   }
   return {
-    title: top ? `${top.coin} is at the pass` : "Kitchen is waiting for a cleaner setup",
+    title: top ? `${top.coin} is at the pass` : "No executive plates right now",
     longCount: longs,
     shortCount: shorts,
     averageSetup: dishes.length ? round(dishes.reduce((sum, dish) => sum + dish.scores.setup, 0) / dishes.length, 1) : 0,
@@ -1088,6 +1151,112 @@ function modeParam(value) {
   return mode === "strict" || mode === "balanced" || mode === "opportunistic" ? mode : "opportunistic";
 }
 
+function normalizeMccSignalV2(signal) {
+  const lifecycle = signal?.lifecycle || {};
+  const scores = signal?.scores || {};
+  const probabilities = signal?.probabilities || {};
+  const outcomes = signal?.outcomes || {};
+  const bot = signal?.bot || {};
+  const quant = signal?.quantDecision || {};
+  const servedAt = signal?.generatedAt || signal?.firstSeenAt || signal?.lastObservedAt || signal?.timestamp;
+  return {
+    id: signal?.id,
+    symbol: signal?.symbol,
+    side: signal?.side,
+    recommendation: signal?.recommendation || lifecycle.entryPlan,
+    decision: signal?.decision,
+    lifecycleState: lifecycle.state,
+    servedAt,
+    generatedAt: signal?.generatedAt,
+    lastObservedAt: signal?.lastObservedAt,
+    setupScore: scores.setupScore,
+    entryScore: scores.entryScore,
+    timingScore: scores.timingScore,
+    alphaScore: scores.alphaScore,
+    confidence: probabilities.confidence,
+    expectedValuePct: lifecycle.expectedValuePct,
+    entryTriggerUsd: signal?.suggestedEntryPriceUsd ?? signal?.observedEntryPriceUsd ?? signal?.currentPriceUsd,
+    bestReferenceEntryUsd: signal?.observedEntryPriceUsd ?? signal?.currentPriceUsd,
+    targetUsd: signal?.targetPriceUsd,
+    invalidationUsd: signal?.invalidationPriceUsd,
+    riskRewardRatio: signal?.riskRewardRatio,
+    spreadBps: signal?.spreadBps,
+    volumeUsd24h: signal?.volumeUsd24h,
+    expectedWaitMinutes: outcomes.waitMinutes ?? outcomes.setupWaitMinutes,
+    suggestedSizingPct: lifecycle.suggestedSizingPct ?? quant.positionSizingPct,
+    allowedForPaper: bot.allowedForPaper,
+    allowedForExecutionLayer: bot.allowedForExecutionLayer,
+    botStale: bot.stale,
+    maxSignalAgeSeconds: bot.maxSignalAgeSeconds,
+    qualityGrade: signal?.qualityGrade,
+    gate: signal?.gate,
+    memory: signal?.memory,
+    probabilities,
+    quantAction: quant.action,
+    quantExpectedValuePct: quant.expectedValuePct,
+    reasons: Array.isArray(signal?.reasons) ? signal.reasons : [],
+    warnings: Array.isArray(signal?.warnings) ? signal.warnings : [],
+  };
+}
+
+function isPremiumSignal(signal, minSetupScore = 0, operationMode = "opportunistic") {
+  const decision = String(signal.decision || "").toUpperCase();
+  const lifecycle = String(signal.lifecycleState || signal.lifecycle || "").toUpperCase();
+  const recommendation = String(signal.recommendation || "").toUpperCase();
+  const blockedStates = ["AVOID", "SKIP", "SKIP_TRADE", "NO_TRADE", "RESOLVED", "EXPIRED", "CANCELLED", "CANCELED", "REVIEW_RESOLVED"];
+  if (blockedStates.includes(lifecycle) || blockedStates.includes(recommendation) || decision === "SKIP_TRADE") return false;
+  if (signal.botStale === true) return false;
+
+  const setup = numberOrNull(signal.setupScore) ?? 0;
+  const timing = numberOrNull(signal.timingScore) ?? 0;
+  const entry = numberOrNull(signal.entryScore) ?? 0;
+  const confidence = numberOrNull(signal.confidence) ?? 0;
+  const expectedValue = numberOrNull(signal.expectedValuePct);
+  const quantExpectedValue = numberOrNull(signal.quantExpectedValuePct);
+  const riskReward = numberOrNull(signal.riskRewardRatio);
+  const profitFactor = numberOrNull(signal.memory?.profitFactor);
+  const averageReturn = numberOrNull(signal.memory?.averageReturnPct);
+  const signalAge = ageSeconds(signalTimestamp(signal));
+  const maxAge = numberOrNull(signal.maxSignalAgeSeconds) ?? 1200;
+  const activeDecision = ["ENTER_NOW", "PAPER_ONLY", "WATCH_SETUP", "EARLY_ALERT"].includes(decision);
+  const freshEnough = signalAge === null || signalAge <= maxAge;
+  const qualityEnough = setup >= minSetupScore && timing >= 18 && confidence >= 55;
+  const edgePositive = (expectedValue !== null && expectedValue >= 0) || (quantExpectedValue !== null && quantExpectedValue >= 0);
+  const memoryPositive = (profitFactor === null || profitFactor >= 1) && (averageReturn === null || averageReturn >= 0);
+  const executionShape = riskReward === null || riskReward >= (operationMode === "opportunistic" ? 0.9 : 1);
+  const strictEnough = operationMode !== "strict" || ["ENTER_NOW", "PAPER_ONLY", "WATCH_SETUP"].includes(decision);
+  const balancedEnough = operationMode !== "balanced" || entry >= 8 || timing >= 28;
+  return activeDecision && freshEnough && qualityEnough && edgePositive && memoryPositive && executionShape && strictEnough && balancedEnough;
+}
+
+function premiumFilterSummary(operationMode, minSetupScore) {
+  return {
+    feed: "mcc-signal-feed-v2",
+    mode: operationMode,
+    minSetupScore,
+    excludes: ["AVOID", "SKIP_TRADE", "REVIEW_RESOLVED", "RESOLVED", "stale"],
+    requires: ["active decision", "fresh signal", "positive EV or quant EV", "non-negative memory edge", "acceptable risk/reward"],
+  };
+}
+
+function premiumSignalSort(a, b) {
+  const decisionRank = { ENTER_NOW: 5, PAPER_ONLY: 4, WATCH_SETUP: 3, EARLY_ALERT: 2 };
+  const gradeRank = { "A+": 5, A: 4, "A-": 3, "B+": 2, B: 1 };
+  const decisionA = decisionRank[String(a.decision || "").toUpperCase()] || 0;
+  const decisionB = decisionRank[String(b.decision || "").toUpperCase()] || 0;
+  const gradeA = gradeRank[String(a.qualityGrade || "").toUpperCase()] || 0;
+  const gradeB = gradeRank[String(b.qualityGrade || "").toUpperCase()] || 0;
+  const evA = numberOrNull(a.expectedValuePct) ?? numberOrNull(a.quantExpectedValuePct) ?? -999;
+  const evB = numberOrNull(b.expectedValuePct) ?? numberOrNull(b.quantExpectedValuePct) ?? -999;
+  const rrA = numberOrNull(a.riskRewardRatio) ?? 0;
+  const rrB = numberOrNull(b.riskRewardRatio) ?? 0;
+  const setupA = numberOrNull(a.setupScore) ?? 0;
+  const setupB = numberOrNull(b.setupScore) ?? 0;
+  const ageA = ageSeconds(signalTimestamp(a)) ?? 999999;
+  const ageB = ageSeconds(signalTimestamp(b)) ?? 999999;
+  return decisionB - decisionA || gradeB - gradeA || evB - evA || rrB - rrA || setupB - setupA || ageA - ageB;
+}
+
 function isWaveRiderSignal(signal, minSetupScore = 0) {
   const decision = String(signal.decision || "").toUpperCase();
   const lifecycle = String(signal.lifecycleState || signal.lifecycle || "").toUpperCase();
@@ -1103,7 +1272,7 @@ function isWaveRiderSignal(signal, minSetupScore = 0) {
   const usefulRecommendation = !blockedStates.includes(recommendation) && recommendation !== "REVIEW_RESOLVED";
   const shortWindow = waitMinutes === null || waitMinutes <= 12;
   const enoughSignalQuality = setup >= minSetupScore && timing >= 28 && (entry >= 8 || confidence >= 55);
-  return actionableDecision && activeLifecycle && usefulRecommendation && shortWindow && enoughSignalQuality;
+  return actionableDecision && activeLifecycle && usefulRecommendation && shortWindow && enoughSignalQuality && isPremiumSignal(signal, minSetupScore, "opportunistic");
 }
 
 function waveRiderSort(a, b) {
@@ -1218,8 +1387,10 @@ function signalTimestamp(signal) {
     signal?.expiredAt,
     signal?.updatedAt,
     signal?.lastSeenAt,
+    signal?.lastObservedAt,
     signal?.firstSeenAt,
     signal?.createdAt,
+    signal?.generatedAt,
     signal?.detectedAt,
     signal?.signalAt,
     signal?.timestamp,
