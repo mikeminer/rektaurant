@@ -721,7 +721,7 @@ h3 {
 
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   margin: 18px 0;
   overflow: hidden;
@@ -987,6 +987,17 @@ h3 {
 
 .dish-card.missed .plating {
   color: rgba(246, 234, 216, 0.82);
+}
+
+.dish-card.recent {
+  min-height: 156px;
+  align-content: start;
+}
+
+.dish-card.recent .plating,
+.dish-card.recent .dish-grid,
+.dish-card.recent .confidence-track {
+  display: none;
 }
 
 .dish-head {

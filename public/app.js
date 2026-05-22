@@ -873,7 +873,7 @@ async function loadMenu({ force = false } = {}) {
     renderRecentSignals();
     renderMenu();
     renderTicket(selectedDish());
-    els.updatedAt.textContent = `Served ${formatDate(menu.generatedAt)} from ${sourceLabel(menu.source)}`;
+    els.updatedAt.textContent = `Served ${formatDate(menu.generatedAt)}`;
     els.serviceStatus.textContent = menu.upstreamError ? "Premium feed paused" : menu.summary?.title || "Menu served";
   } catch (error) {
     els.serviceStatus.textContent = "Kitchen delay";
@@ -1487,7 +1487,7 @@ function plateAgeLabel(dish) {
       ? Math.max(0, Math.round(fallbackSeconds))
       : null;
   if (seconds === null) return "Plate age unavailable";
-  const prefix = isMissedDish(dish) ? "Missed" : "Served";
+  const prefix = dish?.recentSignal ? "Served" : isMissedDish(dish) ? "Missed" : "Served";
   return `${prefix} ${formatDurationAgo(seconds)} ago`;
 }
 
