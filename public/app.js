@@ -64,6 +64,8 @@ const els = {
   walletStatus: document.querySelector("#walletStatus"),
   sessionTimer: document.querySelector("#sessionTimer"),
   serviceStatus: document.querySelector("#serviceStatus"),
+  serviceTitle: document.querySelector("#service-title"),
+  serviceNote: document.querySelector("#serviceNote"),
   refreshButton: document.querySelector("#refreshButton"),
   shareButtons: document.querySelectorAll("[data-share-target]"),
   saveButton: document.querySelector("#saveButton"),
@@ -124,6 +126,7 @@ function bindControls() {
     button.addEventListener("click", () => {
       state.mode = button.dataset.mode;
       setActive("[data-mode]", button);
+      updateModeCopy();
       loadMenu({ force: true });
     });
   });
@@ -143,6 +146,7 @@ function bindControls() {
   });
 
   els.scoreSlider.addEventListener("change", () => loadMenu({ force: true }));
+  updateModeCopy();
 }
 
 function initMiniPayUi() {
@@ -863,7 +867,7 @@ async function loadMenu({ force = false } = {}) {
     els.menuList.innerHTML = `<div class="empty-state"><h3>Service paused</h3><p>${escapeHtml(String(error.message || error))}</p></div>`;
   } finally {
     els.refreshButton.disabled = false;
-    els.refreshButton.textContent = "Refresh menu";
+    els.refreshButton.textContent = modeCopy(state.mode).refreshLabel;
     els.serviceStatus.classList.remove("is-loading");
   }
 }
@@ -880,7 +884,16 @@ function renderMenu() {
   els.menuList.innerHTML = "";
 
   if (dishes.length === 0) {
-    els.menuList.innerHTML = '<div class="empty-state"><h3>No plates match the pass</h3><p>Try all sides or lower the minimum setup score.</p></div>';
+    const empty = state.mode === "wave-rider"
+      ? {
+          title: "No Wave Rider bites right now",
+          body: "Fast food stays off the pass when the wave is cold. Check back soon or lower the minimum setup score.",
+        }
+      : {
+          title: "No plates match the pass",
+          body: "Try all sides or lower the minimum setup score.",
+        };
+    els.menuList.innerHTML = `<div class="empty-state"><h3>${empty.title}</h3><p>${empty.body}</p></div>`;
     return;
   }
 
@@ -905,6 +918,42 @@ function renderMenu() {
     });
     els.menuList.append(node);
   });
+}
+
+function updateModeCopy() {
+  const copy = modeCopy(state.mode);
+  els.serviceTitle.textContent = copy.title;
+  els.serviceNote.textContent = copy.note;
+  els.refreshButton.textContent = copy.refreshLabel;
+}
+
+function modeCopy(mode) {
+  if (mode === "wave-rider") {
+    return {
+      title: "Wave Rider fast food",
+      note: "Fast food signals for short-duration waves. Hot plates, quick bites, strict invalidation.",
+      refreshLabel: "Refresh waves",
+    };
+  }
+  if (mode === "strict") {
+    return {
+      title: "Executive plates only",
+      note: "Tighter filters for cleaner setups. Still read-only research: reprice, check spread and control risk before acting.",
+      refreshLabel: "Refresh menu",
+    };
+  }
+  if (mode === "balanced") {
+    return {
+      title: "Balanced long and short dishes",
+      note: "A middle service between hot opportunities and cleaner risk filters. No orders, no signatures, no custody.",
+      refreshLabel: "Refresh menu",
+    };
+  }
+  return {
+    title: "Long and short dishes from the MCC kitchen",
+    note: "Read-only signal research. No orders, no signatures, no custody. Every plate still needs repricing, spread checks and risk control.",
+    refreshLabel: "Refresh menu",
+  };
 }
 
 function renderTicket(dish) {
@@ -972,6 +1021,14 @@ async function shareSpecial(target = "farcaster") {
 
 function shareCopy(target = "farcaster") {
   const dish = selectedDish() || filteredDishes()[0];
+  if (state.mode === "wave-rider") {
+    return {
+      text: dish
+        ? `Wave Rider is serving ${dish.coin} ${dish.side.toUpperCase()} fast food: hot plate, quick bite, strict invalidation.`
+        : "Wave Rider is Rektaurant fast food: short-duration waves, hot plates, quick bites, strict invalidation.",
+      url: shareUrl(target),
+    };
+  }
   const text = dish
     ? `You didn't eat? Don't waste that delicious alpha. Rektaurant is serving ${dish.coin} ${dish.side.toUpperCase()} as ${dish.dishName}. Base mini app signal plates with risk notes.`
     : "You didn't eat? Don't waste that delicious alpha. Rektaurant is serving hot Base mini app signal plates with Hyperliquid long/short risk notes.";

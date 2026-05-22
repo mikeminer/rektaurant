@@ -234,8 +234,8 @@ async function handleMenu(_request, response, url) {
       upstreamHealth(apiBase),
     ]);
 
-    const dishes = signalsFeed.signals.map((signal, index) => signalToDish(signal, index));
-    if (dishes.length > 0) {
+    const dishes = signalsFeed.signals.map((signal, index) => signalToDish(signal, index, operationMode));
+    if (dishes.length > 0 || operationMode === "wave-rider") {
       await jsonResponse(response, {
         source: "mcc",
         model: signalsFeed.model,
@@ -243,7 +243,7 @@ async function handleMenu(_request, response, url) {
         operationMode: signalsFeed.operationMode,
         ...(config.allowClientApiOverride ? { apiBase } : {}),
         health,
-        summary: menuSummary(dishes, signalsFeed.safety),
+        summary: menuSummary(dishes, signalsFeed.safety, operationMode),
         dishes,
         safety: signalsFeed.safety || [],
       });
@@ -259,10 +259,11 @@ async function handleMenu(_request, response, url) {
 }
 
 async function fetchMccSignals({ limit, minSetupScore, operationMode, side, apiBase }) {
+  const waveRider = operationMode === "wave-rider";
   const endpoint = new URL(`${apiBase}/api/v1/bot/hyperliquid/signals`);
-  endpoint.searchParams.set("limit", String(limit));
-  endpoint.searchParams.set("minSetupScore", String(minSetupScore));
-  endpoint.searchParams.set("operationMode", operationMode);
+  endpoint.searchParams.set("limit", String(waveRider ? Math.max(limit, 30) : limit));
+  endpoint.searchParams.set("minSetupScore", String(waveRider ? Math.min(minSetupScore, 20) : minSetupScore));
+  endpoint.searchParams.set("operationMode", waveRider ? "opportunistic" : operationMode);
   endpoint.searchParams.set("includeWatch", "true");
   if (side) endpoint.searchParams.set("side", side);
 
@@ -271,7 +272,17 @@ async function fetchMccSignals({ limit, minSetupScore, operationMode, side, apiB
 
   const payload = await response.json();
   if (!Array.isArray(payload.signals)) throw new Error("MCC response did not include signals");
-  return payload;
+  if (!waveRider) return payload;
+  return {
+    ...payload,
+    mode: "wave-rider",
+    operationMode: "wave-rider",
+    signals: payload.signals.filter((signal) => isWaveRiderSignal(signal, minSetupScore)).sort(waveRiderSort).slice(0, limit),
+    safety: [
+      "Wave Rider is fast food for short-duration waves: quick reads, strict invalidation, no reheats.",
+      ...(payload.safety || []),
+    ],
+  };
 }
 
 async function fetchHyperliquidFallback({ limit, side, upstreamError }) {
@@ -330,7 +341,7 @@ async function upstreamHealth(apiBase = config.mccApiBase) {
   }
 }
 
-function signalToDish(signal, index) {
+function signalToDish(signal, index, operationMode = "opportunistic") {
   const entry = numberOrNull(signal.entryTriggerUsd ?? signal.bestReferenceEntryUsd);
   const target = numberOrNull(signal.targetUsd);
   const invalidation = numberOrNull(signal.invalidationUsd);
@@ -345,8 +356,8 @@ function signalToDish(signal, index) {
     coin: signal.symbol,
     side: normalizeSignalSide(signal.side),
     dishName: dishName(signal.symbol, normalizeSignalSide(signal.side), index),
-    course: courseFor(signal.recommendation, signal.lifecycleState),
-    chefCall: chefCall(signal.recommendation, signal.quantAction),
+    course: operationMode === "wave-rider" ? "Wave Rider fast food" : courseFor(signal.recommendation, signal.lifecycleState),
+    chefCall: operationMode === "wave-rider" ? "Quick bite, strict stop" : chefCall(signal.recommendation, signal.quantAction),
     recommendation: signal.recommendation,
     decision: signal.decision,
     lifecycle: signal.lifecycleState,
@@ -362,7 +373,7 @@ function signalToDish(signal, index) {
     allowedForExecutionLayer: Boolean(signal.allowedForExecutionLayer),
     scores: { setup, entry: entryScore, timing, alpha },
     volumeUsd24h: 0,
-    plating: platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
+    plating: operationMode === "wave-rider" ? "Hot plate, quick bite, strict invalidation" : platingFor(signal.recommendation, normalizeSignalSide(signal.side)),
     reasons: Array.isArray(signal.why) ? signal.why.slice(0, 4) : [],
     warnings: Array.isArray(signal.warnings) ? signal.warnings.slice(0, 4) : [],
   };
@@ -428,10 +439,19 @@ function fallbackDish(asset, context, index) {
   };
 }
 
-function menuSummary(dishes, safety) {
+function menuSummary(dishes, safety, operationMode = "opportunistic") {
   const longs = dishes.filter((dish) => dish.side === "long").length;
   const shorts = dishes.filter((dish) => dish.side === "short").length;
   const top = dishes[0];
+  if (operationMode === "wave-rider") {
+    return {
+      title: top ? `${top.coin} Wave Rider is hot` : "No Wave Rider bites right now",
+      longCount: longs,
+      shortCount: shorts,
+      averageSetup: dishes.length ? round(dishes.reduce((sum, dish) => sum + dish.scores.setup, 0) / dishes.length, 1) : 0,
+      safety: safety?.[0] || "Fast food signals for short-duration waves. Strict invalidation only.",
+    };
+  }
   return {
     title: top ? `${top.coin} is at the pass` : "Kitchen is waiting for a cleaner setup",
     longCount: longs,
@@ -1050,7 +1070,37 @@ function normalizeSignalSide(value) {
 
 function modeParam(value) {
   const mode = value?.trim().toLowerCase();
+  if (["wave-rider", "waverider", "wave_rider", "fast-path", "fast_path"].includes(mode)) return "wave-rider";
   return mode === "strict" || mode === "balanced" || mode === "opportunistic" ? mode : "opportunistic";
+}
+
+function isWaveRiderSignal(signal, minSetupScore = 0) {
+  const decision = String(signal.decision || "").toUpperCase();
+  const lifecycle = String(signal.lifecycleState || signal.lifecycle || "").toUpperCase();
+  const recommendation = String(signal.recommendation || "").toUpperCase();
+  const waitMinutes = numberOrNull(signal.expectedWaitMinutes);
+  const setup = numberOrNull(signal.setupScore) ?? 0;
+  const timing = numberOrNull(signal.timingScore) ?? 0;
+  const entry = numberOrNull(signal.entryScore) ?? 0;
+  const confidence = numberOrNull(signal.confidence) ?? 0;
+  const actionableDecision = ["ENTER_NOW", "PAPER_ONLY", "WATCH_SETUP", "EARLY_ALERT"].includes(decision);
+  const activeLifecycle = !["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle);
+  const shortWindow = waitMinutes === null || waitMinutes <= 12;
+  const enoughSignalQuality = setup >= minSetupScore && timing >= 28 && (entry >= 8 || confidence >= 55);
+  return actionableDecision && activeLifecycle && shortWindow && enoughSignalQuality && recommendation !== "REVIEW_RESOLVED";
+}
+
+function waveRiderSort(a, b) {
+  const decisionRank = { ENTER_NOW: 4, PAPER_ONLY: 3, WATCH_SETUP: 2, EARLY_ALERT: 1 };
+  const rankA = decisionRank[String(a.decision || "").toUpperCase()] || 0;
+  const rankB = decisionRank[String(b.decision || "").toUpperCase()] || 0;
+  const waitA = numberOrNull(a.expectedWaitMinutes) ?? 99;
+  const waitB = numberOrNull(b.expectedWaitMinutes) ?? 99;
+  const timingA = numberOrNull(a.timingScore) ?? 0;
+  const timingB = numberOrNull(b.timingScore) ?? 0;
+  const setupA = numberOrNull(a.setupScore) ?? 0;
+  const setupB = numberOrNull(b.setupScore) ?? 0;
+  return rankB - rankA || waitA - waitB || timingB - timingA || setupB - setupA;
 }
 
 function clampInt(value, min, max, fallback) {
