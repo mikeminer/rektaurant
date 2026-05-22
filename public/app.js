@@ -98,6 +98,7 @@ async function boot() {
   window.setInterval(() => {
     if (isSessionActive() && state.mccOnline) loadMenu();
   }, 120000);
+  window.setInterval(updatePlateAgeLabels, 30000);
 }
 
 function bindControls() {
@@ -912,6 +913,7 @@ function renderMenu() {
     node.querySelector("h3").textContent = dish.dishName;
     node.querySelector(".side-badge").textContent = dish.side.toUpperCase();
     node.querySelector(".plating").textContent = dish.plating;
+    node.querySelector(".plate-age").textContent = plateAgeLabel(dish);
     node.querySelector('[data-metric="setup"]').textContent = dish.scores.setup;
     node.querySelector('[data-metric="entry"]').textContent = dish.scores.entry;
     node.querySelector('[data-metric="ev"]').textContent = formatPercent(dish.expectedValuePct);
@@ -986,6 +988,7 @@ function renderTicket(dish) {
       ${ticketMetric("Invalidation", formatUsd(dish.invalidationUsd))}
       ${ticketMetric("R/R", dish.riskRewardRatio === null ? "n/a" : `${dish.riskRewardRatio}x`)}
       ${ticketMetric("Confidence", `${dish.confidence}%`)}
+      ${ticketMetric("Plate age", plateAgeLabel(dish), "ticket-age")}
       ${ticketMetric("Size", dish.suggestedSizingPct ? `${dish.suggestedSizingPct}%` : "research")}
     </div>
     <div class="score-stack">
@@ -1201,6 +1204,17 @@ function setNotificationUi(label, action = notificationActionForLabel(label)) {
   els.missedNotifyButton.textContent = label;
 }
 
+function updatePlateAgeLabels() {
+  document.querySelectorAll(".dish-card").forEach((node) => {
+    const dish = state.dishes.find((item) => item.id === node.dataset.id);
+    const target = node.querySelector(".plate-age");
+    if (dish && target) target.textContent = plateAgeLabel(dish);
+  });
+  const selected = selectedDish();
+  const ticketAge = els.ticket.querySelector('[data-metric="ticket-age"] strong');
+  if (selected && ticketAge) ticketAge.textContent = plateAgeLabel(selected);
+}
+
 function notificationActionForLabel(label) {
   if (label === "Notifications on") return "ready";
   if (label === "Notification settings") return "settings";
@@ -1334,8 +1348,9 @@ function isEvmAddress(value) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(value || ""));
 }
 
-function ticketMetric(label, value) {
-  return `<span><small>${label}</small><strong>${value}</strong></span>`;
+function ticketMetric(label, value, metric = "") {
+  const metricAttr = metric ? ` data-metric="${escapeHtml(metric)}"` : "";
+  return `<span${metricAttr}><small>${label}</small><strong>${value}</strong></span>`;
 }
 
 function scoreRow(label, value) {
@@ -1347,6 +1362,31 @@ function isMissedDish(dish) {
   const lifecycle = String(dish?.lifecycle || "").toUpperCase();
   const recommendation = String(dish?.recommendation || "").toUpperCase();
   return ["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle) || recommendation === "REVIEW_RESOLVED";
+}
+
+function plateAgeLabel(dish) {
+  const servedAt = Date.parse(String(dish?.servedAt || ""));
+  const fallbackSeconds = Number(dish?.plateAgeSeconds);
+  const seconds = Number.isFinite(servedAt)
+    ? Math.max(0, Math.round((Date.now() - servedAt) / 1000))
+    : Number.isFinite(fallbackSeconds)
+      ? Math.max(0, Math.round(fallbackSeconds))
+      : null;
+  if (seconds === null) return "Plate age unavailable";
+  const prefix = isMissedDish(dish) ? "Missed" : "Served";
+  return `${prefix} ${formatDurationAgo(seconds)} ago`;
+}
+
+function formatDurationAgo(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours < 24) return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
 function sourceLabel(source) {

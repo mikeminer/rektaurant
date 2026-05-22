@@ -234,7 +234,12 @@ async function handleMenu(_request, response, url) {
       upstreamHealth(apiBase),
     ]);
 
-    const dishes = signalsFeed.signals.map((signal, index) => signalToDish(signal, index, operationMode));
+    const timestampContext = {
+      operationMode,
+      feedGeneratedAt: signalsFeed.generatedAt,
+      snapshotGeneratedAt: signalsFeed.freshness?.snapshotGeneratedAt,
+    };
+    const dishes = signalsFeed.signals.map((signal, index) => signalToDish(signal, index, timestampContext));
     if (dishes.length > 0 || operationMode === "wave-rider") {
       await jsonResponse(response, {
         source: "mcc",
@@ -341,7 +346,8 @@ async function upstreamHealth(apiBase = config.mccApiBase) {
   }
 }
 
-function signalToDish(signal, index, operationMode = "opportunistic") {
+function signalToDish(signal, index, context = {}) {
+  const operationMode = typeof context === "string" ? context : context.operationMode || "opportunistic";
   const entry = numberOrNull(signal.entryTriggerUsd ?? signal.bestReferenceEntryUsd);
   const target = numberOrNull(signal.targetUsd);
   const invalidation = numberOrNull(signal.invalidationUsd);
@@ -351,6 +357,7 @@ function signalToDish(signal, index, operationMode = "opportunistic") {
   const timing = round(numberOrNull(signal.timingScore) ?? 0, 0);
   const alpha = round(numberOrNull(signal.alphaScore) ?? 0, 0);
   const missed = isMissedSignal(signal);
+  const servedAt = signalTimestamp(signal) || context.snapshotGeneratedAt || context.feedGeneratedAt || new Date().toISOString();
 
   return {
     id: signal.id || `mcc-${index}`,
@@ -362,6 +369,9 @@ function signalToDish(signal, index, operationMode = "opportunistic") {
     recommendation: signal.recommendation,
     decision: signal.decision,
     lifecycle: signal.lifecycleState,
+    servedAt,
+    plateAgeSeconds: ageSeconds(servedAt),
+    plateAgeBasis: signalTimestamp(signal) ? "signal" : context.snapshotGeneratedAt ? "snapshot" : "feed",
     confidence,
     expectedValuePct: numberOrNull(signal.expectedValuePct),
     entryUsd: entry,
@@ -404,6 +414,9 @@ function fallbackDish(asset, context, index) {
     recommendation: "MARKET_READ",
     decision: "FALLBACK_RADAR",
     lifecycle: "TRACKING",
+    servedAt: new Date().toISOString(),
+    plateAgeSeconds: 0,
+    plateAgeBasis: "fallback",
     confidence: clamp(Math.round(setup * 0.72), 20, 72),
     expectedValuePct: round(computedSide === "long" ? Math.max(changePct * 0.14, -0.8) : Math.max(-changePct * 0.14, -0.8), 2),
     entryUsd: mark,
@@ -1196,6 +1209,44 @@ function isMissedSignal(signal) {
   const lifecycle = String(signal?.lifecycleState || signal?.lifecycle || "").toUpperCase();
   const recommendation = String(signal?.recommendation || "").toUpperCase();
   return ["RESOLVED", "EXPIRED", "CANCELLED", "CANCELED"].includes(lifecycle) || recommendation === "REVIEW_RESOLVED";
+}
+
+function signalTimestamp(signal) {
+  const candidates = [
+    signal?.servedAt,
+    signal?.resolvedAt,
+    signal?.expiredAt,
+    signal?.updatedAt,
+    signal?.lastSeenAt,
+    signal?.firstSeenAt,
+    signal?.createdAt,
+    signal?.detectedAt,
+    signal?.signalAt,
+    signal?.timestamp,
+  ];
+  return candidates.map(toIsoTimestamp).find(Boolean) || null;
+}
+
+function toIsoTimestamp(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const millis = value > 100000000000 ? value : value * 1000;
+    return new Date(millis).toISOString();
+  }
+  const numericText = String(value).trim();
+  if (/^\d{10,13}$/.test(numericText)) {
+    const number = Number(numericText);
+    const millis = number > 100000000000 ? number : number * 1000;
+    return new Date(millis).toISOString();
+  }
+  const parsed = Date.parse(numericText);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function ageSeconds(isoTimestamp) {
+  const parsed = Date.parse(String(isoTimestamp || ""));
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((Date.now() - parsed) / 1000));
 }
 
 function chefCall(recommendation, quantAction) {
