@@ -21,16 +21,16 @@
     <meta property="og:title" content="Rektaurant Signals" />
     <meta property="og:description" content="Restaurant themed crypto signals for Base Farcaster and Hyperliquid hunters." />
     <meta property="og:url" content="__APP_URL__/" />
-    <meta property="og:image" content="__APP_URL__/assets/hero-1200x630.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    <meta property="og:image" content="__APP_URL__/assets/rektaurant-table-scene-v1.jpg" />
+    <meta property="og:image:width" content="1500" />
+    <meta property="og:image:height" content="844" />
     <meta property="og:image:alt" content="Rektaurant Hyperliquid signal menu on Base" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Rektaurant Signals" />
     <meta name="twitter:description" content="Hot long and short signal plates for crypto hunters in the Base and Farcaster ecosystem." />
-    <meta name="twitter:image" content="__APP_URL__/assets/hero-1200x630.png" />
+    <meta name="twitter:image" content="__APP_URL__/assets/rektaurant-table-scene-v1.jpg" />
     <meta name="twitter:image:alt" content="Rektaurant Hyperliquid signal menu on Base" />
     <meta name="theme-color" content="#171214" />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -39,11 +39,11 @@
     <link rel="preconnect" href="https://esm.sh" />
     <meta
       name="fc:miniapp"
-      content='{"version":"1","imageUrl":"__APP_URL__/assets/og-image.png","button":{"title":"Open the menu","action":{"type":"launch_miniapp","name":"Rektaurant","url":"__APP_URL__/","splashImageUrl":"__APP_URL__/assets/splash-200.png","splashBackgroundColor":"#171214"}}}'
+      content='{"version":"1","imageUrl":"__APP_URL__/assets/rektaurant-table-scene-v1.jpg","button":{"title":"Open the menu","action":{"type":"launch_miniapp","name":"Rektaurant","url":"__APP_URL__/","splashImageUrl":"__APP_URL__/assets/splash-200.png","splashBackgroundColor":"#171214"}}}'
     />
     <meta
       name="fc:frame"
-      content='{"version":"1","imageUrl":"__APP_URL__/assets/og-image.png","button":{"title":"Open the menu","action":{"type":"launch_frame","name":"Rektaurant","url":"__APP_URL__/","splashImageUrl":"__APP_URL__/assets/splash-200.png","splashBackgroundColor":"#171214"}}}'
+      content='{"version":"1","imageUrl":"__APP_URL__/assets/rektaurant-table-scene-v1.jpg","button":{"title":"Open the menu","action":{"type":"launch_frame","name":"Rektaurant","url":"__APP_URL__/","splashImageUrl":"__APP_URL__/assets/splash-200.png","splashBackgroundColor":"#171214"}}}'
     />
     <script type="application/ld+json">
       {
@@ -67,7 +67,7 @@
             "applicationCategory": "FinanceApplication",
             "operatingSystem": "Web, Farcaster",
             "isAccessibleForFree": false,
-            "image": "__APP_URL__/assets/hero-1200x630.png",
+            "image": "__APP_URL__/assets/rektaurant-table-scene-v1.jpg",
             "screenshot": "__APP_URL__/assets/og-image.png",
             "description": "Restaurant themed read-only Hyperliquid long and short signal menu for crypto hunters in the Base and Farcaster ecosystem.",
             "creator": {
@@ -85,7 +85,7 @@
         ]
       }
     </script>
-    <link rel="stylesheet" href="styles.css?v=plateage1" />
+    <link rel="stylesheet" href="styles.css?v=trattoria1" />
   </head>
   <body class="is-locked">
     <section class="closed-gate" id="closedGate" aria-labelledby="closed-title" hidden>
@@ -216,7 +216,9 @@
             <button class="quiet-action" id="saveButton" type="button">Turn on notifications</button>
           </div>
         </div>
-        <img class="plate-art" src="assets/plate-signal-v2.png" alt="Stylized restaurant plate with a trading candle garnish" />
+        <figure class="plate-art">
+          <img src="assets/rektaurant-table-scene-v1.jpg" alt="Restaurant table with a plated candlestick signal, cutlery, candlelight, and checkered tablecloth" />
+        </figure>
       </section>
 
       <section class="controls" aria-label="Menu controls">
@@ -274,6 +276,7 @@
       <section class="menu-layout">
         <div class="menu-list" id="menuList" aria-label="Signal dishes"></div>
         <aside class="ticket" id="ticket" aria-label="Selected signal details">
+          <div class="ticket-plate" aria-hidden="true"></div>
           <p class="eyebrow">Chef's ticket</p>
           <h2>Select a plate</h2>
           <p class="muted">Pick any dish to inspect entry, target, invalidation, confidence and warnings.</p>
@@ -311,6 +314,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=plateage1"></script>
+    <script type="module" src="app.js?v=trattoria1"></script>
   </body>
 </html>

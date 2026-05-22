@@ -968,7 +968,7 @@ function modeCopy(mode) {
 
 function renderTicket(dish) {
   if (!dish) {
-    els.ticket.innerHTML = '<p class="eyebrow">Chef\'s ticket</p><h2>Select a plate</h2><p class="muted">Pick any dish to inspect details.</p>';
+    els.ticket.innerHTML = '<div class="ticket-plate" aria-hidden="true"></div><p class="eyebrow">Chef\'s ticket</p><h2>Select a plate</h2><p class="muted">Pick any dish to inspect details.</p>';
     return;
   }
 
@@ -977,6 +977,7 @@ function renderTicket(dish) {
     ? '<p class="ticket-alert">Past expired signal missed. Turn on notifications to catch the next hot plate as soon as it leaves the kitchen.</p>'
     : "";
   els.ticket.innerHTML = `
+    <div class="ticket-plate ${dish.side === "short" ? "short" : ""}" aria-hidden="true"></div>
     <p class="eyebrow">Chef's ticket</p>
     <div class="ticket-title">
       <h2>${escapeHtml(dish.coin)} <span class="${sideClass}">${escapeHtml(dish.side.toUpperCase())}</span></h2>
