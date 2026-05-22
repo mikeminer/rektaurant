@@ -73,7 +73,7 @@ body::before {
   padding: calc(18px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
   background:
     linear-gradient(90deg, rgba(23, 18, 20, 0.78), rgba(23, 18, 20, 0.32)),
-    url("assets/rektaurant-table-scene-v1.jpg") center / cover no-repeat;
+    url("assets/rektaurant-table-service-v1.jpg") center / cover no-repeat;
 }
 
 .tip-card,
@@ -392,7 +392,7 @@ button {
   content: "";
   background:
     linear-gradient(90deg, rgba(23, 18, 20, 0.9), rgba(23, 18, 20, 0.34)),
-    url("assets/rektaurant-table-scene-v1.jpg") center / cover no-repeat;
+    url("assets/rektaurant-table-service-v1.jpg") center / cover no-repeat;
   box-shadow: 0 32px 90px rgba(0, 0, 0, 0.3);
 }
 
@@ -530,7 +530,7 @@ h3 {
   padding: clamp(24px, 6vw, 58px);
   background:
     linear-gradient(90deg, rgba(23, 18, 20, 0.95), rgba(23, 18, 20, 0.76) 45%, rgba(23, 18, 20, 0.16)),
-    url("assets/rektaurant-table-scene-v1.jpg") center right / cover no-repeat;
+    url("assets/rektaurant-table-service-v1.jpg") center right / cover no-repeat;
   box-shadow: var(--shadow);
 }
 
