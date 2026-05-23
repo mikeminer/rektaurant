@@ -112,6 +112,11 @@ export async function rektaurantHandler(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/signal-lookup") {
+      await handleSignalLookup(response, url);
+      return;
+    }
+
     if (url.pathname === "/api/config") {
       await jsonResponse(response, publicConfig());
       return;
@@ -280,6 +285,32 @@ async function handleMenu(_request, response, url) {
   }
 }
 
+async function handleSignalLookup(response, url) {
+  const id = signalIdParam(url.searchParams.get("id"));
+  if (!id) {
+    await jsonResponse(response, { ok: false, error: "Paste a valid full signal id." }, 400);
+    return;
+  }
+
+  const apiBase = effectiveMccApiBase(url);
+  try {
+    const signal = await fetchMccSignalLookup(id, apiBase);
+    if (!signal) {
+      await jsonResponse(response, { ok: false, error: "Signal not found in the MCC journal." }, 404);
+      return;
+    }
+
+    await jsonResponse(response, {
+      ok: true,
+      id,
+      card: normalizeSignalLookupCard(signal, id),
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    await jsonResponse(response, { ok: false, error: String(error?.message || error) }, 502);
+  }
+}
+
 async function fetchMccSignals({ limit, minSetupScore, operationMode, side, apiBase }) {
   const v2 = await fetchMccSignalsV2({ limit, minSetupScore, operationMode, side, apiBase });
   if (v2) return v2;
@@ -340,6 +371,60 @@ async function fetchMccRecentSignals({ limit, side, apiBase }) {
       .slice(0, limit);
   } catch {
     return [];
+  }
+}
+
+async function fetchMccSignalLookup(id, apiBase) {
+  const direct = await fetchMccSignalDetail(id, apiBase);
+  if (direct) return direct;
+
+  const journal = await fetchMccSignalJournal(id, apiBase);
+  if (journal) return journal;
+
+  const recent = await fetchMccRecentSignalById(id, apiBase);
+  if (recent) return recent;
+
+  return null;
+}
+
+async function fetchMccSignalDetail(id, apiBase) {
+  try {
+    const endpoint = new URL(`${apiBase}/api/v1/signals/${encodeURIComponent(id)}`);
+    endpoint.searchParams.set("includeRaw", "true");
+    const response = await fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 18000);
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMccSignalJournal(id, apiBase) {
+  try {
+    const endpoint = new URL(`${apiBase}/api/v1/signals/journal`);
+    endpoint.searchParams.set("limit", "2500");
+    endpoint.searchParams.set("includeRaw", "true");
+    const response = await fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 30000);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const signals = Array.isArray(payload.signals) ? payload.signals : [];
+    return signals.find((signal) => signalMatchesId(signal, id)) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMccRecentSignalById(id, apiBase) {
+  try {
+    const endpoint = new URL(`${apiBase}/api/hyperliquid/intelligence`);
+    const response = await fetchWithTimeout(endpoint, { headers: { accept: "application/json" } }, 18000);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const signals = Array.isArray(payload.recentSignals) ? payload.recentSignals : [];
+    return signals.find((signal) => signalMatchesId(signal, id)) || null;
+  } catch {
+    return null;
   }
 }
 
@@ -1183,6 +1268,11 @@ function apiBaseParam(value) {
   }
 }
 
+function signalIdParam(value) {
+  const trimmed = String(value || "").trim();
+  return /^[a-zA-Z0-9:_-]{6,160}$/.test(trimmed) ? trimmed : "";
+}
+
 function normalizeSignalSide(value) {
   return String(value || "").toLowerCase().includes("short") ? "short" : "long";
 }
@@ -1514,6 +1604,78 @@ function isMissedRecentSignal(recentSignal, plateAgeSeconds) {
   if (outcome === "open") return false;
   const age = Number(plateAgeSeconds);
   return Number.isFinite(age) ? age > recentMissedAfterSeconds : ["expired", "cancelled", "canceled"].includes(outcome);
+}
+
+function signalMatchesId(signal, id) {
+  const candidates = [
+    signal?.id,
+    signal?.signalId,
+    signal?.journalId,
+    signal?.raw?.id,
+    signal?.raw?.signalId,
+    signal?.opportunitySnapshot?.signalId,
+    signal?.opportunitySnapshot?.id,
+  ].filter(Boolean).map(String);
+  return candidates.some((candidate) => candidate === id);
+}
+
+function normalizeSignalLookupCard(signal, requestedId) {
+  const raw = signal?.raw && typeof signal.raw === "object" ? signal.raw : signal;
+  const opportunity = raw?.opportunitySnapshot || raw?.opportunity || {};
+  const pro = opportunity?.pro || raw?.pro || {};
+  const entryDecision = pro?.entryDecision || raw?.entryDecision || {};
+  const quantDecision = pro?.quantDecision || raw?.quantDecision || {};
+  const outcomes = raw?.outcomes || {};
+  const side = normalizeSignalSide(raw?.side || opportunity?.side);
+  const warnings = uniqueStrings([
+    ...(Array.isArray(raw?.warnings) ? raw.warnings : []),
+    ...(Array.isArray(opportunity?.warnings) ? opportunity.warnings : []),
+    ...(Array.isArray(entryDecision?.warnings) ? entryDecision.warnings : []),
+    ...(Array.isArray(quantDecision?.warnings) ? quantDecision.warnings : []),
+  ]).slice(0, 5);
+
+  return {
+    id: String(raw?.id || raw?.signalId || opportunity?.signalId || requestedId),
+    sourceLabel: "MCC journal card",
+    symbol: String(raw?.symbol || opportunity?.symbol || "SIGNAL").toUpperCase(),
+    side,
+    decision: cleanLookupLabel(raw?.entryDecisionAction || raw?.decision || entryDecision?.action || quantDecision?.action || raw?.recommendation),
+    score: numberOrNull(raw?.entryDecisionScore ?? raw?.score ?? raw?.scores?.setup ?? opportunity?.score),
+    outcome: cleanLookupLabel(raw?.outcome || outcomes?.outcome || "open"),
+    setupOutcome: cleanLookupLabel(raw?.setupOutcome || outcomes?.setupOutcome || ""),
+    generatedAt: toIsoTimestamp(raw?.generatedAt || opportunity?.generatedAt),
+    lastObservedAt: toIsoTimestamp(raw?.lastObservedAt || raw?.closedAt || opportunity?.lastObservedAt),
+    entryUsd: numberOrNull(raw?.suggestedEntryPriceUsd ?? raw?.entryTriggerUsd ?? raw?.observedEntryPriceUsd ?? opportunity?.suggestedEntryPriceUsd),
+    targetUsd: numberOrNull(raw?.targetPriceUsd ?? raw?.targetUsd ?? opportunity?.targetPriceUsd),
+    invalidationUsd: numberOrNull(raw?.invalidationPriceUsd ?? raw?.invalidationUsd ?? opportunity?.invalidationPriceUsd),
+    mfePct: numberOrNull(raw?.maxFavorablePct ?? outcomes?.mfePct),
+    maePct: numberOrNull(raw?.maxAdversePct ?? outcomes?.maePct),
+    riskRewardRatio: numberOrNull(raw?.riskRewardRatio ?? opportunity?.riskRewardRatio),
+    qualityGrade: raw?.qualityGrade || opportunity?.qualityGrade || "",
+    gate: raw?.gate || pro?.gate || "",
+    thesis: String(opportunity?.thesis || raw?.aiComment || entryDecision?.reason || quantDecision?.summary || raw?.reasons?.[0] || ""),
+    warnings,
+  };
+}
+
+function cleanLookupLabel(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .trim()
+    .toLowerCase() || "n/a";
+}
+
+function uniqueStrings(items) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    const value = String(item || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  return unique;
 }
 
 function recentCourseFor(recentSignal, missed) {

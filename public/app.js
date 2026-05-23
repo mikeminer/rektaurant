@@ -51,6 +51,11 @@ const els = {
   retryHealthButton: document.querySelector("#retryHealthButton"),
   closedStatus: document.querySelector("#closedStatus"),
   tipGate: document.querySelector("#tipGate"),
+  signalLookupForm: document.querySelector("#signalLookupForm"),
+  signalLookupInput: document.querySelector("#signalLookupInput"),
+  signalLookupButton: document.querySelector("#signalLookupButton"),
+  signalLookupStatus: document.querySelector("#signalLookupStatus"),
+  signalLookupResult: document.querySelector("#signalLookupResult"),
   tipButton: document.querySelector("#tipButton"),
   previewUnlockButton: document.querySelector("#previewUnlockButton"),
   tipRecipient: document.querySelector("#tipRecipient"),
@@ -110,6 +115,7 @@ async function boot() {
 function bindControls() {
   els.retryHealthButton.addEventListener("click", () => checkMccAndUpdateGate({ force: true }));
 
+  els.signalLookupForm.addEventListener("submit", lookupSignalById);
   els.tipButton.addEventListener("click", leaveTip);
   els.monthlyPassButton.addEventListener("click", buyMonthlyPass);
   els.miniPayButton.addEventListener("click", payWithMiniPay);
@@ -158,6 +164,79 @@ function bindControls() {
 
   els.scoreSlider.addEventListener("change", () => loadMenu({ force: true }));
   updateModeCopy();
+}
+
+async function lookupSignalById(event) {
+  event.preventDefault();
+  const id = els.signalLookupInput.value.trim();
+  els.signalLookupResult.hidden = true;
+  els.signalLookupResult.innerHTML = "";
+
+  if (!id) {
+    els.signalLookupStatus.textContent = "Paste a full signal id first.";
+    return;
+  }
+
+  const params = new URLSearchParams({ id });
+  if (state.allowClientApiOverride && state.mccApiBase) params.set("apiBase", state.mccApiBase);
+
+  els.signalLookupButton.disabled = true;
+  els.signalLookupButton.textContent = "Opening";
+  els.signalLookupStatus.textContent = "Checking the signal journal...";
+
+  try {
+    const response = await fetch(`${apiBase}/api/signal-lookup?${params.toString()}`, { headers: { accept: "application/json" } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(payload.error || `Lookup failed (${response.status})`);
+    renderSignalLookupCard(payload.card);
+    els.signalLookupStatus.textContent = "Signal card opened from the persisted journal.";
+  } catch (error) {
+    els.signalLookupStatus.textContent = String(error?.message || error || "Signal not found.");
+  } finally {
+    els.signalLookupButton.disabled = false;
+    els.signalLookupButton.textContent = "Open signal card";
+  }
+}
+
+function renderSignalLookupCard(card = {}) {
+  const side = normalizeSignalSide(card.side);
+  const toneClass = side === "short" ? "short" : "long";
+  const generated = card.generatedAt ? formatDate(card.generatedAt) : "n/a";
+  const observed = card.lastObservedAt ? formatDate(card.lastObservedAt) : "n/a";
+  const metrics = [
+    ["Decision", card.decision || "n/a"],
+    ["Score", formatCompactValue(card.score)],
+    ["Outcome", card.outcome || "open"],
+    ["Setup", card.setupOutcome || "n/a"],
+    ["Entry", formatUsd(card.entryUsd)],
+    ["Target", formatUsd(card.targetUsd)],
+    ["Invalidation", formatUsd(card.invalidationUsd)],
+    ["MFE", formatPercent(card.mfePct)],
+    ["MAE", formatPercent(card.maePct)],
+    ["R/R", card.riskRewardRatio === null || card.riskRewardRatio === undefined ? "n/a" : `${formatCompactValue(card.riskRewardRatio)}x`],
+    ["Signal UTC", generated],
+    ["Observed", observed],
+  ];
+  const warnings = Array.isArray(card.warnings) ? card.warnings.slice(0, 3) : [];
+  els.signalLookupResult.className = `signal-lookup-result ${toneClass}`;
+  els.signalLookupResult.innerHTML = `
+    <article>
+      <header>
+        <div>
+          <span>${escapeHtml(card.sourceLabel || "Persisted signal")}</span>
+          <h2>${escapeHtml(card.symbol || "Signal")} ${escapeHtml(side.toUpperCase())}</h2>
+        </div>
+        <strong>${escapeHtml(card.qualityGrade || card.gate || "MCC")}</strong>
+      </header>
+      <code>${escapeHtml(card.id || "")}</code>
+      <div class="signal-lookup-metrics">
+        ${metrics.map(([label, value]) => `<span><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></span>`).join("")}
+      </div>
+      ${card.thesis ? `<p>${escapeHtml(card.thesis)}</p>` : ""}
+      ${warnings.length ? `<ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    </article>
+  `;
+  els.signalLookupResult.hidden = false;
 }
 
 function initMiniPayUi() {
@@ -1513,6 +1592,11 @@ function formatDurationAgo(seconds) {
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
+function normalizeSignalSide(value) {
+  const text = String(value || "").toLowerCase();
+  return text.includes("short") ? "short" : "long";
 }
 
 function sourceLabel(source) {

@@ -108,6 +108,24 @@
         <div class="tip-plate">
           <img src="assets/splash-200.png" alt="" />
         </div>
+        <form class="signal-lookup" id="signalLookupForm">
+          <label for="signalLookupInput">
+            <span><i aria-hidden="true"></i>Signal ID lookup</span>
+          </label>
+          <div>
+            <input
+              id="signalLookupInput"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste full signal id"
+            />
+            <button class="quiet-action" id="signalLookupButton" type="submit">Open signal card</button>
+          </div>
+          <p class="signal-lookup-help" id="signalLookupStatus">Opens the persisted signal card from the journal/API.</p>
+          <div class="signal-lookup-result" id="signalLookupResult" hidden></div>
+        </form>
         <p class="eyebrow">Reservation required</p>
         <h1 id="tip-title">Choose your option to pay</h1>
         <p class="tip-copy">
@@ -343,6 +361,6 @@
       </article>
     </template>
 
-    <script type="module" src="app.js?v=missed-fresh1"></script>
+    <script type="module" src="app.js?v=signal-lookup1"></script>
   </body>
 </html>
